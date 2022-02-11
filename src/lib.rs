@@ -48,7 +48,7 @@ impl From<ItemImpl> for ItemConstImpl {
 // }
 
 impl From<ItemConstImpl> for TokenStream {
-    #[allow(unused_variables)]
+    #[allow(unused_variables, clippy::let_and_return)]
     fn from(item_impl: ItemConstImpl) -> TokenStream {
         let ItemConstImpl {
             attrs,
