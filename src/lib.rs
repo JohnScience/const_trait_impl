@@ -1,7 +1,11 @@
-use proc_macro::{TokenStream};
-use proc_macro2::{Group, Delimiter, TokenStream as TokenStream2};
-use syn::{parse_macro_input, ItemImpl, Attribute, token::{Default, Unsafe, Impl, Bang, For, Brace, Const}, Generics, Path, Type, ImplItem};
+use proc_macro::TokenStream;
+use proc_macro2::{Delimiter as Delimiter2, Group as Group2, TokenStream as TokenStream2};
 use quote::ToTokens;
+use syn::{
+    parse_macro_input,
+    token::{Bang, Brace, Const, Default, For, Impl, Unsafe},
+    Attribute, Generics, ImplItem, ItemImpl, Path, Type,
+};
 
 struct ItemConstImpl {
     attrs: Vec<Attribute>,
@@ -14,7 +18,7 @@ struct ItemConstImpl {
     trait_: Option<(Option<Bang>, Path, For)>,
     self_ty: Box<Type>,
     brace_token: Brace,
-    items: Vec<ImplItem>
+    items: Vec<ImplItem>,
 }
 
 impl From<ItemImpl> for ItemConstImpl {
@@ -29,7 +33,7 @@ impl From<ItemImpl> for ItemConstImpl {
             trait_: item_impl.trait_,
             self_ty: item_impl.self_ty,
             brace_token: item_impl.brace_token,
-            items: item_impl.items
+            items: item_impl.items,
         }
     }
 }
@@ -56,21 +60,21 @@ impl From<ItemConstImpl> for TokenStream {
             trait_,
             self_ty,
             brace_token,
-            items
+            items,
         } = item_impl;
         // TokenStream reorders the supplied tokens.
         // No idea what to do
         let mut ts = TokenStream::new();
         for attr in attrs.into_iter() {
             ts.extend::<TokenStream>(attr.to_token_stream().into());
-        };
+        }
         ts.extend::<TokenStream>(defaultness.to_token_stream().into());
         ts.extend::<TokenStream>(unsafety.to_token_stream().into());
         ts.extend::<TokenStream>(impl_token.to_token_stream().into());
         ts.extend::<TokenStream>(generics.to_token_stream().into());
         ts.extend::<TokenStream>(constness.to_token_stream().into());
         match trait_ {
-            None => {},
+            None => {}
             Some((bang, path, for_)) => {
                 ts.extend::<TokenStream>(bang.to_token_stream().into());
                 ts.extend::<TokenStream>(path.to_token_stream().into());
@@ -81,8 +85,12 @@ impl From<ItemConstImpl> for TokenStream {
         let mut nested_ts = TokenStream2::new();
         for item in items.into_iter() {
             nested_ts.extend(item.to_token_stream());
-        };
-        ts.extend::<TokenStream>(Group::new(Delimiter::Brace, nested_ts).to_token_stream().into());
+        }
+        ts.extend::<TokenStream>(
+            Group2::new(Delimiter2::Brace, nested_ts)
+                .to_token_stream()
+                .into(),
+        );
         let comment = format!("const S: &str = \"{}\";", ts);
         let ts = <TokenStream as std::str::FromStr>::from_str(&comment).unwrap();
         ts
