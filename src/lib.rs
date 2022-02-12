@@ -12,461 +12,17 @@ use syn::{
     spanned::Spanned,
     token::{Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Pound, Unsafe, Paren},
     AttrStyle, Attribute, ConstParam, Error, Ident, ImplItem, Lifetime, LifetimeDef, Path, Result,
-    Token, Type, TypePath, WhereClause, parenthesized, BoundLifetimes, ParenthesizedGenericArguments, PathArguments, PathSegment,
+    Token, Type, TypePath, WhereClause, parenthesized, BoundLifetimes, ParenthesizedGenericArguments, PathArguments,
 };
-// use syn::Generics;
+// syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
+// due to the transitive chain:
+//
+use syn::Generics;
 // use syn::GenericParam;
 // use syn::TypeParam;
 // use syn::TypeParamBound;
 // use syn::TraitBound;
 // use syn::TraitBoundModifier;
-
-// syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
-// due to the transitive chain:
-// syn::TraitBoundModifier => syn::TraitBound => syn::TypeParamBound => syn::TypeParam =>
-//  => syn::GenericParam => syn::Generics.
-
-impl ToTokens for TildeConst {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        self.tilde.to_tokens(tokens);
-        self.const_.to_tokens(tokens);
-    }
-}
-
-impl Parse for TildeConst {
-    fn parse(input: ParseStream) -> Result<Self> {
-        Ok(Self {
-            tilde: input.parse::<Token![~]>()?,
-            const_: input.parse::<Token![const]>()?,
-        })
-    }
-}
-
-struct TildeConst {
-    tilde: Token![~],
-    const_: Token![const],
-}
-
-// generics.rs (syn 1.0.86)
-impl Parse for TraitBoundModifier {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek(Token![?]) {
-            input.parse().map(TraitBoundModifier::Maybe)
-        } else if input.peek(Token![~]) && input.peek2(Token![const]) {
-            input.parse().map(TraitBoundModifier::TildeConst)
-        } else {
-            Ok(TraitBoundModifier::None)
-        }
-    }
-}
-
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
-impl ToTokens for TraitBoundModifier {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        match self {
-            TraitBoundModifier::None => {},
-            TraitBoundModifier::Maybe(t) => t.to_tokens(tokens),
-            TraitBoundModifier::TildeConst(tilde_const) => tilde_const.to_tokens(tokens),
-        }
-    }
-}
-
-// generics.rs (syn 1.0.86)
-enum TraitBoundModifier {
-    None,
-    Maybe(Token![?]),
-    TildeConst(TildeConst),
-}
-
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
-impl ToTokens for TraitBound {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        let to_tokens = |tokens: &mut TokenStream2| {
-            self.modifier.to_tokens(tokens);
-            self.lifetimes.to_tokens(tokens);
-            {
-                self.path.to_tokens(tokens);
-            }
-        };
-        match &self.paren_token {
-            Some(paren) => paren.surround(tokens, to_tokens),
-            None => to_tokens(tokens),
-        }
-    }
-}
-
-// generics.rs (syn 1.0.86)
-impl Parse for TraitBound {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let tilde_const = if input.peek(Token![~]) && input.peek2(Token![const]) {
-            let tilde_token = input.parse::<Token![~]>()?;
-            let const_token = input.parse::<Token![const]>()?;
-            Some((tilde_token, const_token))
-        } else {
-            None
-        };
-
-        let modifier: TraitBoundModifier = input.parse()?;
-        let lifetimes: Option<BoundLifetimes> = input.parse()?;
-
-        let mut path: Path = input.parse()?;
-        if path.segments.last().unwrap().arguments.is_empty()
-            && (input.peek(Paren) || input.peek(Token![::]) && input.peek3(Paren))
-        {
-            input.parse::<Option<Token![::]>>()?;
-            let args: ParenthesizedGenericArguments = input.parse()?;
-            let parenthesized = PathArguments::Parenthesized(args);
-            path.segments.last_mut().unwrap().arguments = parenthesized;
-        }
-
-        {
-            if let Some((tilde_token, const_token)) = tilde_const {
-                path.segments.insert(
-                    0,
-                    PathSegment {
-                        ident: Ident::new("const", const_token.span),
-                        arguments: PathArguments::None,
-                    },
-                );
-                let (_const, punct) = path.segments.pairs_mut().next().unwrap().into_tuple();
-                *punct.unwrap() = Token![::](tilde_token.span);
-            }
-        }
-
-        Ok(TraitBound {
-            paren_token: None,
-            modifier,
-            lifetimes,
-            path,
-        })
-    }
-}
-
-// generics.rs (syn 1.0.86)
-struct TraitBound {
-    pub paren_token: Option<Paren>,
-    pub modifier: TraitBoundModifier,
-    /// The `for<'a>` in `for<'a> Foo<&'a T>`
-    pub lifetimes: Option<BoundLifetimes>,
-    /// The `Foo<&'a T>` in `for<'a> Foo<&'a T>`
-    pub path: Path,
-}
-
-// generics.rs (syn 1.0.86)
-enum TypeParamBound {
-    Trait(TraitBound),
-    Lifetime(Lifetime),
-}
-
-// generics.rs (syn 1.0.86)
-impl Parse for TypeParamBound {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek(Lifetime) {
-            return input.parse().map(TypeParamBound::Lifetime);
-        }
-
-        if input.peek(Paren) {
-            let content;
-            let paren_token = parenthesized!(content in input);
-            let mut bound: TraitBound = content.parse::<TraitBound>()?;
-            bound.paren_token = Some(paren_token);
-            return Ok(TypeParamBound::Trait(bound));
-        }
-
-        input.parse::<TraitBound>().map(TypeParamBound::Trait)
-    }
-}
-
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
-impl ToTokens for TypeParamBound {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        match self {
-            TypeParamBound::Trait(t) => t.to_tokens(tokens),
-            TypeParamBound::Lifetime(l) => l.to_tokens(tokens),
-        }
-    }
-}
-
-// verbatim.rs (syn 1.0.86)
-mod verbatim {
-    use super::*;
-    pub fn between<'a>(begin: ParseBuffer<'a>, end: ParseStream<'a>) -> TokenStream2 {
-        let end = end.cursor();
-        let mut cursor = begin.cursor();
-        let mut tokens = TokenStream2::new();
-        while cursor != end {
-            let (tt, next) = cursor.token_tree().unwrap();
-            tokens.extend(core::iter::once(tt));
-            cursor = next;
-        }
-        tokens
-    }
-}
-
-// generics.rs (syn 1.0.86)
-impl Parse for TypeParam {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let attrs = input.call(Attribute::parse_outer)?;
-        let ident: Ident = input.parse()?;
-        let colon_token: Option<Token![:]> = input.parse()?;
-
-        let begin_bound = input.fork();
-        let mut is_maybe_const = false;
-        let mut bounds = Punctuated::new();
-        if colon_token.is_some() {
-            loop {
-                if input.peek(Token![,]) || input.peek(Token![>]) || input.peek(Token![=]) {
-                    break;
-                }
-                if input.peek(Token![~]) && input.peek2(Token![const]) {
-                    input.parse::<Token![~]>()?;
-                    input.parse::<Token![const]>()?;
-                    is_maybe_const = true;
-                }
-                let value: TypeParamBound = input.parse::<TypeParamBound>()?;
-                bounds.push_value(value);
-                if !input.peek(Token![+]) {
-                    break;
-                }
-                let punct: Token![+] = input.parse()?;
-                bounds.push_punct(punct);
-            }
-        }
-
-        let mut eq_token: Option<Token![=]> = input.parse()?;
-        let mut default = if eq_token.is_some() {
-            Some(input.parse::<Type>()?)
-        } else {
-            None
-        };
-
-        if is_maybe_const {
-            bounds.clear();
-            eq_token = None;
-            default = Some(Type::Verbatim(verbatim::between(begin_bound, input)));
-        }
-
-        Ok(TypeParam {
-            attrs,
-            ident,
-            colon_token,
-            bounds,
-            eq_token,
-            default,
-        })
-    }
-}
-
-// syn::attr (syn 1.0.86)
-impl<'a> FilterAttrs<'a> for &'a [Attribute] {
-    type Ret = core::iter::Filter<core::slice::Iter<'a, Attribute>, fn(&&Attribute) -> bool>;
-
-    fn outer(self) -> Self::Ret {
-        fn is_outer(attr: &&Attribute) -> bool {
-            match attr.style {
-                AttrStyle::Outer => true,
-                AttrStyle::Inner(_) => false,
-            }
-        }
-        self.iter().filter(is_outer)
-    }
-
-    fn inner(self) -> Self::Ret {
-        fn is_inner(attr: &&Attribute) -> bool {
-            match attr.style {
-                AttrStyle::Inner(_) => true,
-                AttrStyle::Outer => false,
-            }
-        }
-        self.iter().filter(is_inner)
-    }
-}
-
-// syn::attr (syn 1.0.86)
-trait FilterAttrs<'a> {
-    type Ret: Iterator<Item = &'a Attribute>;
-
-    fn outer(self) -> Self::Ret;
-    fn inner(self) -> Self::Ret;
-}
-
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
-impl ToTokens for TypeParam {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        tokens.append_all(self.attrs.outer());
-        self.ident.to_tokens(tokens);
-        if !self.bounds.is_empty() {
-            TokensOrDefault(&self.colon_token).to_tokens(tokens);
-            self.bounds.to_tokens(tokens);
-        }
-        if let Some(default) = &self.default {
-            TokensOrDefault(&self.eq_token).to_tokens(tokens);
-            default.to_tokens(tokens);
-        }
-    }
-}
-
-// generics.rs (syn 1.0.86)
-struct TypeParam {
-    pub attrs: Vec<Attribute>,
-    pub ident: Ident,
-    pub colon_token: Option<Token![:]>,
-    pub bounds: Punctuated<TypeParamBound, Token![+]>,
-    pub eq_token: Option<Token![=]>,
-    pub default: Option<Type>,
-}
-
-// generics.rs (syn 1.0.86)
-enum GenericParam {
-    /// A generic type parameter: `T: Into<String>`.
-    Type(TypeParam),
-
-    /// A lifetime definition: `'a: 'b + 'c + 'd`.
-    Lifetime(LifetimeDef),
-
-    /// A const generic parameter: `const LENGTH: usize`.
-    Const(ConstParam),
-}
-
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
-impl ToTokens for GenericParam {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        match self {
-            GenericParam::Type(_e) => _e.to_tokens(tokens),
-            GenericParam::Lifetime(_e) => _e.to_tokens(tokens),
-            GenericParam::Const(_e) => _e.to_tokens(tokens),
-        }
-    }
-}
-
-// generics.rs (syn 1.0.86)
-#[derive(Default)]
-struct Generics {
-    lt_token: Option<Lt>,
-    params: Punctuated<GenericParam, Comma>,
-    gt_token: Option<Gt>,
-    where_clause: Option<WhereClause>,
-}
-
-// generics.rs (syn 1.0.86)
-impl Parse for Generics {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if !input.peek(Token![<]) {
-            return Ok(Generics::default());
-        }
-
-        let lt_token: Token![<] = input.parse()?;
-
-        let mut params = Punctuated::new();
-        loop {
-            if input.peek(Token![>]) {
-                break;
-            }
-
-            let attrs = input.call(Attribute::parse_outer)?;
-            let lookahead = input.lookahead1();
-            if lookahead.peek(Lifetime) {
-                params.push_value(GenericParam::Lifetime(LifetimeDef {
-                    attrs,
-                    ..input.parse()?
-                }));
-            } else if lookahead.peek(Ident) {
-                params.push_value(GenericParam::Type(TypeParam {
-                    attrs,
-                    ..input.parse::<TypeParam>()?
-                }));
-            } else if lookahead.peek(Token![const]) {
-                params.push_value(GenericParam::Const(ConstParam {
-                    attrs,
-                    ..input.parse::<ConstParam>()?
-                }));
-            } else if input.peek(Token![_]) {
-                params.push_value(GenericParam::Type(TypeParam {
-                    attrs,
-                    ident: input.call(Ident::parse_any)?,
-                    colon_token: None,
-                    bounds: Punctuated::new(),
-                    eq_token: None,
-                    default: None,
-                }));
-            } else {
-                return Err(lookahead.error());
-            }
-
-            if input.peek(Token![>]) {
-                break;
-            }
-            let punct = input.parse()?;
-            params.push_punct(punct);
-        }
-
-        let gt_token: Token![>] = input.parse()?;
-
-        Ok(Generics {
-            lt_token: Some(lt_token),
-            params,
-            gt_token: Some(gt_token),
-            where_clause: None,
-        })
-    }
-}
-
-struct TokensOrDefault<'a, T: 'a>(pub &'a Option<T>);
-
-impl<'a, T> ToTokens for TokensOrDefault<'a, T>
-where
-    T: ToTokens + Default,
-{
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        match self.0 {
-            Some(t) => t.to_tokens(tokens),
-            None => T::default().to_tokens(tokens),
-        }
-    }
-}
-
-// generics.rs (syn 1.0.86)
-impl ToTokens for Generics {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        if self.params.is_empty() {
-            return;
-        }
-
-        TokensOrDefault(&self.lt_token).to_tokens(tokens);
-
-        // Print lifetimes before types and consts, regardless of their
-        // order in self.params.
-        //
-        // TODO: ordering rules for const parameters vs type parameters have
-        // not been settled yet. https://github.com/rust-lang/rust/issues/44580
-        let mut trailing_or_empty = true;
-        for param in self.params.pairs() {
-            if let GenericParam::Lifetime(_) = **param.value() {
-                <Pair<&GenericParam, &Comma> as ToTokens>::to_tokens(&param, tokens);
-                trailing_or_empty = param.punct().is_some();
-            }
-        }
-        for param in self.params.pairs() {
-            match **param.value() {
-                GenericParam::Type(_) | GenericParam::Const(_) => {
-                    if !trailing_or_empty {
-                        <Token![,]>::default().to_tokens(tokens);
-                        trailing_or_empty = true;
-                    }
-                    param.to_tokens(tokens);
-                }
-                GenericParam::Lifetime(_) => {}
-            }
-        }
-
-        TokensOrDefault(&self.gt_token).to_tokens(tokens);
-    }
-}
 
 struct ItemConstImpl {
     attrs: Vec<Attribute>,
@@ -481,6 +37,458 @@ struct ItemConstImpl {
     brace_token: Brace,
     items: Vec<ImplItem>,
 }
+
+// // generics.rs (syn 1.0.86)
+// #[derive(Default)]
+// struct Generics {
+//     lt_token: Option<Lt>,
+//     params: Punctuated<GenericParam, Comma>,
+//     gt_token: Option<Gt>,
+//     where_clause: Option<WhereClause>,
+// }
+
+// // generics.rs (syn 1.0.86)
+// enum GenericParam {
+//     /// A generic type parameter: `T: Into<String>`.
+//     Type(TypeParam),
+
+//     /// A lifetime definition: `'a: 'b + 'c + 'd`.
+//     Lifetime(LifetimeDef),
+
+//     /// A const generic parameter: `const LENGTH: usize`.
+//     Const(ConstParam),
+// }
+
+// // generics.rs (syn 1.0.86)
+// struct TypeParam {
+//     pub attrs: Vec<Attribute>,
+//     pub ident: Ident,
+//     pub colon_token: Option<Token![:]>,
+//     pub bounds: Punctuated<TypeParamBound, Token![+]>,
+//     pub eq_token: Option<Token![=]>,
+//     pub default: Option<Type>,
+// }
+
+// // generics.rs (syn 1.0.86)
+// enum TypeParamBound {
+//     Trait(TraitBound),
+//     Lifetime(Lifetime),
+// }
+
+// // generics.rs (syn 1.0.86)
+// struct TraitBound {
+//     pub paren_token: Option<Paren>,
+//     pub modifier: TraitBoundModifier,
+//     /// The `for<'a>` in `for<'a> Foo<&'a T>`
+//     pub lifetimes: Option<BoundLifetimes>,
+//     /// The `Foo<&'a T>` in `for<'a> Foo<&'a T>`
+//     pub path: Path,
+// }
+
+// // generics.rs (syn 1.0.86)
+// enum TraitBoundModifier {
+//     None,
+//     Maybe(Token![?]),
+//     TildeConst(TildeConst),
+// }
+
+// struct TildeConst {
+//     tilde: Token![~],
+//     const_: Token![const],
+// }
+
+// impl ToTokens for TildeConst {
+//     fn to_tokens(&self, tokens: &mut TokenStream2) {
+//         self.tilde.to_tokens(tokens);
+//         self.const_.to_tokens(tokens);
+//     }
+// }
+
+// impl Parse for TildeConst {
+//     fn parse(input: ParseStream) -> Result<Self> {
+//         Ok(Self {
+//             tilde: input.parse::<Token![~]>()?,
+//             const_: input.parse::<Token![const]>()?,
+//         })
+//     }
+// }
+
+// // generics.rs (syn 1.0.86)
+// impl Parse for TraitBoundModifier {
+//     fn parse(input: ParseStream) -> Result<Self> {
+//         if input.peek(Token![?]) {
+//             input.parse().map(TraitBoundModifier::Maybe)
+//         } else if input.peek(Token![~]) && input.peek2(Token![const]) {
+//             input.parse().map(TraitBoundModifier::TildeConst)
+//         } else {
+//             Ok(TraitBoundModifier::None)
+//         }
+//     }
+// }
+
+// // generics.rs (syn 1.0.86)
+// // Originally, the code was generated with a macro
+// impl ToTokens for TraitBoundModifier {
+//     fn to_tokens(&self, tokens: &mut TokenStream2) {
+//         match self {
+//             TraitBoundModifier::None => {},
+//             TraitBoundModifier::Maybe(t) => t.to_tokens(tokens),
+//             TraitBoundModifier::TildeConst(tilde_const) => tilde_const.to_tokens(tokens),
+//         }
+//     }
+// }
+
+// // generics.rs (syn 1.0.86)
+// // Originally, the code was generated with a macro
+// impl ToTokens for TraitBound {
+//     fn to_tokens(&self, tokens: &mut TokenStream2) {
+//         let to_tokens = |tokens: &mut TokenStream2| {
+//             self.modifier.to_tokens(tokens);
+//             self.lifetimes.to_tokens(tokens);
+//             {
+//                 self.path.to_tokens(tokens);
+//             }
+//         };
+//         match &self.paren_token {
+//             Some(paren) => paren.surround(tokens, to_tokens),
+//             None => to_tokens(tokens),
+//         }
+//     }
+// }
+
+// // generics.rs (syn 1.0.86)
+// impl Parse for TraitBound {
+//     fn parse(input: ParseStream) -> Result<Self> {
+//         // The code was originally uncommented 
+//         //
+//         // let tilde_const = if input.peek(Token![~]) && input.peek2(Token![const]) {
+//         //     let tilde_token = input.parse::<Token![~]>()?;
+//         //     let const_token = input.parse::<Token![const]>()?;
+//         //     Some((tilde_token, const_token))
+//         // } else {
+//         //     None
+//         // };
+
+//         let modifier: TraitBoundModifier = input.parse()?;
+//         let lifetimes: Option<BoundLifetimes> = input.parse()?;
+
+//         let mut path: Path = input.parse()?;
+//         if path.segments.last().unwrap().arguments.is_empty()
+
+//         && (input.peek(Paren) || input.peek(Token![::]) && input.peek3(Paren))
+//         {
+//             input.parse::<Option<Token![::]>>()?;
+//             let args: ParenthesizedGenericArguments = input.parse()?;
+//             let parenthesized = PathArguments::Parenthesized(args);
+//             path.segments.last_mut().unwrap().arguments = parenthesized;
+//         }
+
+//         // Originally, the code was uncommented
+//         //
+//         //{
+//         //    if let Some((tilde_token, const_token)) = tilde_const {
+//         //        path.segments.insert(
+//         //            0,
+//         //            PathSegment {
+//         //                ident: Ident::new("const", const_token.span),
+//         //                arguments: PathArguments::None,
+//         //            },
+//         //        );
+//         //        let (_const, punct) = path.segments.pairs_mut().next().unwrap().into_tuple();
+//         //        *punct.unwrap() = Token![::](tilde_token.span);
+//         //    }
+//         //}
+
+//         Ok(TraitBound {
+//             paren_token: None,
+//             modifier,
+//             lifetimes,
+//             path,
+//         })
+//     }
+// }
+
+// // generics.rs (syn 1.0.86)
+// impl Parse for TypeParamBound {
+//     fn parse(input: ParseStream) -> Result<Self> {
+//         if input.peek(Lifetime) {
+//             return input.parse().map(TypeParamBound::Lifetime);
+//         }
+
+//         if input.peek(Paren) {
+//             let content;
+//             let paren_token = parenthesized!(content in input);
+//             let mut bound: TraitBound = content.parse::<TraitBound>()?;
+//             bound.paren_token = Some(paren_token);
+//             return Ok(TypeParamBound::Trait(bound));
+//         }
+
+//         input.parse::<TraitBound>().map(TypeParamBound::Trait)
+//     }
+// }
+
+// // generics.rs (syn 1.0.86)
+// // Originally, the code was generated with a macro
+// impl ToTokens for TypeParamBound {
+//     fn to_tokens(&self, tokens: &mut TokenStream2) {
+//         match self {
+//             TypeParamBound::Trait(t) => t.to_tokens(tokens),
+//             TypeParamBound::Lifetime(l) => l.to_tokens(tokens),
+//         }
+//     }
+// }
+
+// // verbatim.rs (syn 1.0.86)
+// mod verbatim {
+//     use super::*;
+//     pub fn between<'a>(begin: ParseBuffer<'a>, end: ParseStream<'a>) -> TokenStream2 {
+//         let end = end.cursor();
+//         let mut cursor = begin.cursor();
+//         let mut tokens = TokenStream2::new();
+//         while cursor != end {
+//             let (tt, next) = cursor.token_tree().unwrap();
+//             tokens.extend(core::iter::once(tt));
+//             cursor = next;
+//         }
+//         tokens
+//     }
+// }
+
+// // generics.rs (syn 1.0.86)
+// impl Parse for TypeParam {
+//     fn parse(input: ParseStream) -> Result<Self> {
+//         let attrs = input.call(Attribute::parse_outer)?;
+//         let ident: Ident = input.parse()?;
+//         let colon_token: Option<Token![:]> = input.parse()?;
+
+//         let begin_bound = input.fork();
+//         let mut is_maybe_const = false;
+//         let mut bounds = Punctuated::new();
+//         if colon_token.is_some() {
+//             loop {
+//                 if input.peek(Token![,]) || input.peek(Token![>]) || input.peek(Token![=]) {
+//                     break;
+//                 }
+//                 let value: TypeParamBound = input.parse::<TypeParamBound>()?;
+
+//                 match &value {
+//                     TypeParamBound::Lifetime(_) => {},
+//                     TypeParamBound::Trait(trait_) => {
+//                         if let TraitBoundModifier::TildeConst(_) = trait_.modifier {
+//                             is_maybe_const = true;
+//                         }
+//                     }
+//                 }
+
+//                 bounds.push_value(value);
+//                 if !input.peek(Token![+]) {
+//                     break;
+//                 }
+//                 let punct: Token![+] = input.parse()?;
+//                 bounds.push_punct(punct);
+//             }
+//         }
+
+//         let mut eq_token: Option<Token![=]> = input.parse()?;
+//         let mut default = if eq_token.is_some() {
+//             Some(input.parse::<Type>()?)
+//         } else {
+//             None
+//         };
+
+//         if is_maybe_const {
+//             bounds.clear();
+//             eq_token = None;
+//             default = Some(Type::Verbatim(verbatim::between(begin_bound, input)));
+//         }
+
+//         Ok(TypeParam {
+//             attrs,
+//             ident,
+//             colon_token,
+//             bounds,
+//             eq_token,
+//             default,
+//         })
+//     }
+// }
+
+// // syn::attr (syn 1.0.86)
+// impl<'a> FilterAttrs<'a> for &'a [Attribute] {
+//     type Ret = core::iter::Filter<core::slice::Iter<'a, Attribute>, fn(&&Attribute) -> bool>;
+
+//     fn outer(self) -> Self::Ret {
+//         fn is_outer(attr: &&Attribute) -> bool {
+//             match attr.style {
+//                 AttrStyle::Outer => true,
+//                 AttrStyle::Inner(_) => false,
+//             }
+//         }
+//         self.iter().filter(is_outer)
+//     }
+
+//     fn inner(self) -> Self::Ret {
+//         fn is_inner(attr: &&Attribute) -> bool {
+//             match attr.style {
+//                 AttrStyle::Inner(_) => true,
+//                 AttrStyle::Outer => false,
+//             }
+//         }
+//         self.iter().filter(is_inner)
+//     }
+// }
+
+// // syn::attr (syn 1.0.86)
+// trait FilterAttrs<'a> {
+//     type Ret: Iterator<Item = &'a Attribute>;
+
+//     fn outer(self) -> Self::Ret;
+//     fn inner(self) -> Self::Ret;
+// }
+
+// // generics.rs (syn 1.0.86)
+// // Originally, the code was generated with a macro
+// impl ToTokens for TypeParam {
+//     fn to_tokens(&self, tokens: &mut TokenStream2) {
+//         tokens.append_all(self.attrs.outer());
+//         self.ident.to_tokens(tokens);
+//         if !self.bounds.is_empty() {
+//             TokensOrDefault(&self.colon_token).to_tokens(tokens);
+//             self.bounds.to_tokens(tokens);
+//         }
+//         if let Some(default) = &self.default {
+//             TokensOrDefault(&self.eq_token).to_tokens(tokens);
+//             default.to_tokens(tokens);
+//         }
+//     }
+// }
+
+// // generics.rs (syn 1.0.86)
+// // Originally, the code was generated with a macro
+// impl ToTokens for GenericParam {
+//     fn to_tokens(&self, tokens: &mut TokenStream2) {
+//         match self {
+//             GenericParam::Type(_e) => _e.to_tokens(tokens),
+//             GenericParam::Lifetime(_e) => _e.to_tokens(tokens),
+//             GenericParam::Const(_e) => _e.to_tokens(tokens),
+//         }
+//     }
+// }
+
+// // generics.rs (syn 1.0.86)
+// impl Parse for Generics {
+//     fn parse(input: ParseStream) -> Result<Self> {
+//         if !input.peek(Token![<]) {
+//             return Ok(Generics::default());
+//         }
+
+//         let lt_token: Token![<] = input.parse()?;
+
+//         let mut params = Punctuated::new();
+//         loop {
+//             if input.peek(Token![>]) {
+//                 break;
+//             }
+
+//             let attrs = input.call(Attribute::parse_outer)?;
+//             let lookahead = input.lookahead1();
+//             if lookahead.peek(Lifetime) {
+//                 params.push_value(GenericParam::Lifetime(LifetimeDef {
+//                     attrs,
+//                     ..input.parse()?
+//                 }));
+//             } else if lookahead.peek(Ident) {
+//                 params.push_value(GenericParam::Type(TypeParam {
+//                     attrs,
+//                     ..input.parse::<TypeParam>()?
+//                 }));
+//             } else if lookahead.peek(Token![const]) {
+//                 params.push_value(GenericParam::Const(ConstParam {
+//                     attrs,
+//                     ..input.parse::<ConstParam>()?
+//                 }));
+//             } else if input.peek(Token![_]) {
+//                 params.push_value(GenericParam::Type(TypeParam {
+//                     attrs,
+//                     ident: input.call(Ident::parse_any)?,
+//                     colon_token: None,
+//                     bounds: Punctuated::new(),
+//                     eq_token: None,
+//                     default: None,
+//                 }));
+//             } else {
+//                 return Err(lookahead.error());
+//             }
+
+//             if input.peek(Token![>]) {
+//                 break;
+//             }
+//             let punct = input.parse()?;
+//             params.push_punct(punct);
+//         }
+
+//         let gt_token: Token![>] = input.parse()?;
+
+//         Ok(Generics {
+//             lt_token: Some(lt_token),
+//             params,
+//             gt_token: Some(gt_token),
+//             where_clause: None,
+//         })
+//     }
+// }
+
+// struct TokensOrDefault<'a, T: 'a>(pub &'a Option<T>);
+
+// impl<'a, T> ToTokens for TokensOrDefault<'a, T>
+// where
+//     T: ToTokens + Default,
+// {
+//     fn to_tokens(&self, tokens: &mut TokenStream2) {
+//         match self.0 {
+//             Some(t) => t.to_tokens(tokens),
+//             None => T::default().to_tokens(tokens),
+//         }
+//     }
+// }
+
+// // generics.rs (syn 1.0.86)
+// impl ToTokens for Generics {
+//     fn to_tokens(&self, tokens: &mut TokenStream2) {
+//         if self.params.is_empty() {
+//             return;
+//         }
+
+//         TokensOrDefault(&self.lt_token).to_tokens(tokens);
+
+//         // Print lifetimes before types and consts, regardless of their
+//         // order in self.params.
+//         //
+//         // TODO: ordering rules for const parameters vs type parameters have
+//         // not been settled yet. https://github.com/rust-lang/rust/issues/44580
+//         let mut trailing_or_empty = true;
+//         for param in self.params.pairs() {
+//             if let GenericParam::Lifetime(_) = **param.value() {
+//                 <Pair<&GenericParam, &Comma> as ToTokens>::to_tokens(&param, tokens);
+//                 trailing_or_empty = param.punct().is_some();
+//             }
+//         }
+//         for param in self.params.pairs() {
+//             match **param.value() {
+//                 GenericParam::Type(_) | GenericParam::Const(_) => {
+//                     if !trailing_or_empty {
+//                         <Token![,]>::default().to_tokens(tokens);
+//                         trailing_or_empty = true;
+//                     }
+//                     param.to_tokens(tokens);
+//                 }
+//                 GenericParam::Lifetime(_) => {}
+//             }
+//         }
+
+//         TokensOrDefault(&self.gt_token).to_tokens(tokens);
+//     }
+// }
 
 // syn::attr::parsing::parse_inner (syn 1.0.86)
 fn single_parse_inner(input: ParseStream) -> Result<Attribute> {
