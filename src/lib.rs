@@ -12,18 +12,47 @@ use syn::{
     spanned::Spanned,
     token::{Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Pound, Unsafe, Paren},
     AttrStyle, Attribute, ConstParam, Error, Ident, ImplItem, Lifetime, LifetimeDef, Path, Result,
-    Token, Type, TypePath, WhereClause, parenthesized, TraitBoundModifier, BoundLifetimes, ParenthesizedGenericArguments, PathArguments, PathSegment,
+    Token, Type, TypePath, WhereClause, parenthesized, BoundLifetimes, ParenthesizedGenericArguments, PathArguments, PathSegment,
 };
 // use syn::Generics;
 // use syn::GenericParam;
 // use syn::TypeParam;
 // use syn::TypeParamBound;
 // use syn::TraitBound;
+// use syn::TraitBoundModifier;
 
 // syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
 // due to the transitive chain:
 // syn::TraitBoundModifier => syn::TraitBound => syn::TypeParamBound => syn::TypeParam =>
 //  => syn::GenericParam => syn::Generics.
+
+// generics.rs (syn 1.0.86)
+impl Parse for TraitBoundModifier {
+    fn parse(input: ParseStream) -> Result<Self> {
+        if input.peek(Token![?]) {
+            input.parse().map(TraitBoundModifier::Maybe)
+        } else {
+            Ok(TraitBoundModifier::None)
+        }
+    }
+}
+
+// generics.rs (syn 1.0.86)
+// Originally, the code was generated with a macro
+impl ToTokens for TraitBoundModifier {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        match self {
+            TraitBoundModifier::None => {},
+            TraitBoundModifier::Maybe(t) => t.to_tokens(tokens),
+        }
+    }
+}
+
+// generics.rs (syn 1.0.86)
+enum TraitBoundModifier {
+    None,
+    Maybe(Token![?]),
+}
 
 // generics.rs (syn 1.0.86)
 // Originally, the code was generated with a macro
