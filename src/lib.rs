@@ -10,9 +10,9 @@ use syn::{
     parse_macro_input,
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
-    token::{Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Pound, Unsafe},
+    token::{Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Pound, Unsafe, Paren},
     AttrStyle, Attribute, ConstParam, Error, Ident, ImplItem, Lifetime, LifetimeDef, Path, Result,
-    Token, TraitBound, Type, TypeParamBound, TypePath, WhereClause,
+    Token, TraitBound, Type, TypePath, WhereClause, parenthesized,
 };
 // use syn::Generics;
 // use syn::GenericParam;
@@ -25,10 +25,40 @@ use syn::{
 //  => syn::GenericParam => syn::Generics.
 
 // generics.rs (syn 1.0.86)
-// enum TypeParamBound {
-//     Trait(TraitBound),
-//     Lifetime(Lifetime),
-// }
+enum TypeParamBound {
+    Trait(TraitBound),
+    Lifetime(Lifetime),
+}
+
+// generics.rs (syn 1.0.86)
+impl Parse for TypeParamBound {
+    fn parse(input: ParseStream) -> Result<Self> {
+        if input.peek(Lifetime) {
+            return input.parse().map(TypeParamBound::Lifetime);
+        }
+
+        if input.peek(Paren) {
+            let content;
+            let paren_token = parenthesized!(content in input);
+            let mut bound: TraitBound = content.parse()?;
+            bound.paren_token = Some(paren_token);
+            return Ok(TypeParamBound::Trait(bound));
+        }
+
+        input.parse().map(TypeParamBound::Trait)
+    }
+}
+
+// generics.rs (syn 1.0.86)
+// Originally, the code was generated with a macro
+impl ToTokens for TypeParamBound {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        match self {
+            TypeParamBound::Trait(t) => t.to_tokens(tokens),
+            TypeParamBound::Lifetime(l) => l.to_tokens(tokens),
+        }
+    }
+}
 
 // verbatim.rs (syn 1.0.86)
 mod verbatim {
@@ -150,6 +180,7 @@ impl ToTokens for TypeParam {
     }
 }
 
+// generics.rs (syn 1.0.86)
 struct TypeParam {
     pub attrs: Vec<Attribute>,
     pub ident: Ident,
@@ -159,6 +190,7 @@ struct TypeParam {
     pub default: Option<Type>,
 }
 
+// generics.rs (syn 1.0.86)
 enum GenericParam {
     /// A generic type parameter: `T: Into<String>`.
     Type(TypeParam),
