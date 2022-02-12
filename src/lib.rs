@@ -26,11 +26,34 @@ use syn::{
 // syn::TraitBoundModifier => syn::TraitBound => syn::TypeParamBound => syn::TypeParam =>
 //  => syn::GenericParam => syn::Generics.
 
+impl ToTokens for TildeConst {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        self.tilde.to_tokens(tokens);
+        self.const_.to_tokens(tokens);
+    }
+}
+
+impl Parse for TildeConst {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(Self {
+            tilde: input.parse::<Token![~]>()?,
+            const_: input.parse::<Token![const]>()?,
+        })
+    }
+}
+
+struct TildeConst {
+    tilde: Token![~],
+    const_: Token![const],
+}
+
 // generics.rs (syn 1.0.86)
 impl Parse for TraitBoundModifier {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek(Token![?]) {
             input.parse().map(TraitBoundModifier::Maybe)
+        } else if input.peek(Token![~]) && input.peek2(Token![const]) {
+            input.parse().map(TraitBoundModifier::TildeConst)
         } else {
             Ok(TraitBoundModifier::None)
         }
@@ -44,6 +67,7 @@ impl ToTokens for TraitBoundModifier {
         match self {
             TraitBoundModifier::None => {},
             TraitBoundModifier::Maybe(t) => t.to_tokens(tokens),
+            TraitBoundModifier::TildeConst(tilde_const) => tilde_const.to_tokens(tokens),
         }
     }
 }
@@ -52,6 +76,7 @@ impl ToTokens for TraitBoundModifier {
 enum TraitBoundModifier {
     None,
     Maybe(Token![?]),
+    TildeConst(TildeConst),
 }
 
 // generics.rs (syn 1.0.86)
