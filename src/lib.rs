@@ -3,23 +3,141 @@ use proc_macro2::{Delimiter as Delimiter2, Group as Group2, TokenStream as Token
 use quote::ToTokens;
 use syn::{
     parse_macro_input,
-    token::{Bang, Brace, Const, Default, For, Impl, Unsafe, Lt, Gt, Comma},
-    Result, Attribute, ImplItem, Path, Type, parse::{Parse, ParseStream}, punctuated::Punctuated, GenericParam, WhereClause, Token, Ident, Lifetime, Generics, TypePath, Error, braced, AttrStyle, bracketed, spanned::Spanned,
+    token::{Bang, Brace, Const, Default as DefaultKW, For, Impl, Unsafe, Lt, Gt, Comma, Pound},
+    Result, Attribute, ImplItem, Path, Type, parse::{Parse, ParseStream}, punctuated::Punctuated, GenericParam, WhereClause, Token, Ident, Lifetime, TypePath, Error, braced, AttrStyle, bracketed, spanned::Spanned, LifetimeDef, TypeParam, ConstParam, ext::IdentExt,
 };
+// use syn::Generics;
 
 // syn::Generics is outdated because syn::GenericParam is. 
 
-// struct Generics {
-//     lt_token: Option<Lt>,
-//     params: Punctuated<GenericParam, Comma>,
-//     gt_token: Option<Gt>,
-//     where_clause: Option<WhereClause>,
-// }
+// generics.rs (syn 1.0.86)
+#[derive(Default)]
+struct Generics {
+    lt_token: Option<Lt>,
+    params: Punctuated<GenericParam, Comma>,
+    gt_token: Option<Gt>,
+    where_clause: Option<WhereClause>,
+}
+
+// generics.rs (syn 1.0.86)
+impl Parse for Generics {
+    fn parse(input: ParseStream) -> Result<Self> {
+        if !input.peek(Token![<]) {
+            return Ok(Generics::default());
+        }
+
+        let lt_token: Token![<] = input.parse()?;
+
+        let mut params = Punctuated::new();
+        loop {
+            if input.peek(Token![>]) {
+                break;
+            }
+
+            let attrs = input.call(Attribute::parse_outer)?;
+            let lookahead = input.lookahead1();
+            if lookahead.peek(Lifetime) {
+                params.push_value(GenericParam::Lifetime(LifetimeDef {
+                    attrs,
+                    ..input.parse()?
+                }));
+            } else if lookahead.peek(Ident) {
+                params.push_value(GenericParam::Type(TypeParam {
+                    attrs,
+                    ..input.parse()?
+                }));
+            } else if lookahead.peek(Token![const]) {
+                params.push_value(GenericParam::Const(ConstParam {
+                    attrs,
+                    ..input.parse()?
+                }));
+            } else if input.peek(Token![_]) {
+                params.push_value(GenericParam::Type(TypeParam {
+                    attrs,
+                    ident: input.call(Ident::parse_any)?,
+                    colon_token: None,
+                    bounds: Punctuated::new(),
+                    eq_token: None,
+                    default: None,
+                }));
+            } else {
+                return Err(lookahead.error());
+            }
+
+            if input.peek(Token![>]) {
+                break;
+            }
+            let punct = input.parse()?;
+            params.push_punct(punct);
+        }
+
+        let gt_token: Token![>] = input.parse()?;
+
+        Ok(Generics {
+            lt_token: Some(lt_token),
+            params,
+            gt_token: Some(gt_token),
+            where_clause: None,
+        })
+    }
+}
+
+struct TokensOrDefault<'a, T: 'a>(pub &'a Option<T>);
+
+impl<'a, T> ToTokens for TokensOrDefault<'a, T>
+where
+    T: ToTokens + Default,
+{
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        match self.0 {
+            Some(t) => t.to_tokens(tokens),
+            None => T::default().to_tokens(tokens),
+        }
+    }
+}
+
+// generics.rs (syn 1.0.86)
+impl ToTokens for Generics {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        if self.params.is_empty() {
+            return;
+        }
+
+        TokensOrDefault(&self.lt_token).to_tokens(tokens);
+
+        // Print lifetimes before types and consts, regardless of their
+        // order in self.params.
+        //
+        // TODO: ordering rules for const parameters vs type parameters have
+        // not been settled yet. https://github.com/rust-lang/rust/issues/44580
+        let mut trailing_or_empty = true;
+        for param in self.params.pairs() {
+            if let GenericParam::Lifetime(_) = **param.value() {
+                param.to_tokens(tokens);
+                trailing_or_empty = param.punct().is_some();
+            }
+        }
+        for param in self.params.pairs() {
+            match **param.value() {
+                GenericParam::Type(_) | GenericParam::Const(_) => {
+                    if !trailing_or_empty {
+                        <Token![,]>::default().to_tokens(tokens);
+                        trailing_or_empty = true;
+                    }
+                    param.to_tokens(tokens);
+                }
+                GenericParam::Lifetime(_) => {}
+            }
+        }
+
+        TokensOrDefault(&self.gt_token).to_tokens(tokens);
+    }
+}
 
 struct ItemConstImpl {
     attrs: Vec<Attribute>,
     // https://github.com/rust-lang/rfcs/blob/master/text/1210-impl-specialization.md
-    defaultness: Option<Default>,
+    defaultness: Option<DefaultKW>,
     unsafety: Option<Unsafe>,
     impl_token: Impl,
     generics: Generics,
@@ -34,11 +152,11 @@ struct ItemConstImpl {
 fn single_parse_inner(input: ParseStream) -> Result<Attribute> {
     let content;
     Ok(Attribute {
-        pound_token: input.parse()?,
-        style: AttrStyle::Inner(input.parse()?),
+        pound_token: input.parse::<Pound>()?,
+        style: AttrStyle::Inner(input.parse::<Bang>()?),
         bracket_token: bracketed!(content in input),
         path: content.call(Path::parse_mod_style)?,
-        tokens: content.parse()?,
+        tokens: content.parse::<TokenStream2>()?,
     })
 }
 
@@ -54,7 +172,7 @@ impl Parse for ItemConstImpl {
     // Largely based on: https://docs.rs/syn/1.0.86/src/syn/item.rs.html#2402-2407
     fn parse(input: syn::parse::ParseStream) -> Result<Self> {
         let mut attrs = input.call(Attribute::parse_outer)?;
-        let defaultness = input.parse::<Option<Default>>()?;
+        let defaultness = input.parse::<Option<DefaultKW>>()?;
         let unsafety = input.parse::<Option<Token![unsafe]>>()?;
         let impl_token = input.parse::<Impl>()?;
 
@@ -111,11 +229,11 @@ impl Parse for ItemConstImpl {
             else {
                 return Err(Error::new(first_ty_span, "expected trait path"));
             }
-            self_ty = input.parse()?;
+            self_ty = input.parse::<Type>()?;
         } else {
             return Err(Error::new(Span2::call_site(), "expected trait impl block"));
         };
-        generics.where_clause = input.parse()?;
+        generics.where_clause = input.parse::<Option<WhereClause>>()?;
 
         let content;
         let brace_token = braced!(content in input);
@@ -123,7 +241,7 @@ impl Parse for ItemConstImpl {
 
         let mut items = Vec::new();
         while !content.is_empty() {
-            items.push(content.parse()?);
+            items.push(content.parse::<ImplItem>()?);
         }
         if is_impl_for && trait_.is_none() {
             return Err(Error::new(is_impl_for.span(), "expected trait name"));
@@ -159,8 +277,6 @@ impl From<ItemConstImpl> for TokenStream {
             brace_token,
             items,
         } = item_impl;
-        // TokenStream reorders the supplied tokens.
-        // No idea what to do
         let mut ts = TokenStream::new();
         for attr in attrs.into_iter() {
             ts.extend::<TokenStream>(attr.to_token_stream().into());
@@ -195,7 +311,7 @@ impl From<ItemConstImpl> for TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn const_trait_impl(_attr_args: TokenStream, item: TokenStream) -> TokenStream {
+pub fn unconst_trait_impl(_attr_args: TokenStream, item: TokenStream) -> TokenStream {
     let item_const_impl = parse_macro_input!(item as ItemConstImpl);
     item_const_impl.into()
 }
