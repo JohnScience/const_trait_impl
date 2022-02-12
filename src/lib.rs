@@ -12,17 +12,93 @@ use syn::{
     spanned::Spanned,
     token::{Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Pound, Unsafe, Paren},
     AttrStyle, Attribute, ConstParam, Error, Ident, ImplItem, Lifetime, LifetimeDef, Path, Result,
-    Token, TraitBound, Type, TypePath, WhereClause, parenthesized,
+    Token, Type, TypePath, WhereClause, parenthesized, TraitBoundModifier, BoundLifetimes, ParenthesizedGenericArguments, PathArguments, PathSegment,
 };
 // use syn::Generics;
 // use syn::GenericParam;
 // use syn::TypeParam;
 // use syn::TypeParamBound;
+// use syn::TraitBound;
 
 // syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
 // due to the transitive chain:
 // syn::TraitBoundModifier => syn::TraitBound => syn::TypeParamBound => syn::TypeParam =>
 //  => syn::GenericParam => syn::Generics.
+
+// generics.rs (syn 1.0.86)
+// Originally, the code was generated with a macro
+impl ToTokens for TraitBound {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        let to_tokens = |tokens: &mut TokenStream2| {
+            self.modifier.to_tokens(tokens);
+            self.lifetimes.to_tokens(tokens);
+            {
+                self.path.to_tokens(tokens);
+            }
+        };
+        match &self.paren_token {
+            Some(paren) => paren.surround(tokens, to_tokens),
+            None => to_tokens(tokens),
+        }
+    }
+}
+
+// generics.rs (syn 1.0.86)
+impl Parse for TraitBound {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let tilde_const = if input.peek(Token![~]) && input.peek2(Token![const]) {
+            let tilde_token = input.parse::<Token![~]>()?;
+            let const_token = input.parse::<Token![const]>()?;
+            Some((tilde_token, const_token))
+        } else {
+            None
+        };
+
+        let modifier: TraitBoundModifier = input.parse()?;
+        let lifetimes: Option<BoundLifetimes> = input.parse()?;
+
+        let mut path: Path = input.parse()?;
+        if path.segments.last().unwrap().arguments.is_empty()
+            && (input.peek(Paren) || input.peek(Token![::]) && input.peek3(Paren))
+        {
+            input.parse::<Option<Token![::]>>()?;
+            let args: ParenthesizedGenericArguments = input.parse()?;
+            let parenthesized = PathArguments::Parenthesized(args);
+            path.segments.last_mut().unwrap().arguments = parenthesized;
+        }
+
+        {
+            if let Some((tilde_token, const_token)) = tilde_const {
+                path.segments.insert(
+                    0,
+                    PathSegment {
+                        ident: Ident::new("const", const_token.span),
+                        arguments: PathArguments::None,
+                    },
+                );
+                let (_const, punct) = path.segments.pairs_mut().next().unwrap().into_tuple();
+                *punct.unwrap() = Token![::](tilde_token.span);
+            }
+        }
+
+        Ok(TraitBound {
+            paren_token: None,
+            modifier,
+            lifetimes,
+            path,
+        })
+    }
+}
+
+// generics.rs (syn 1.0.86)
+struct TraitBound {
+    pub paren_token: Option<Paren>,
+    pub modifier: TraitBoundModifier,
+    /// The `for<'a>` in `for<'a> Foo<&'a T>`
+    pub lifetimes: Option<BoundLifetimes>,
+    /// The `Foo<&'a T>` in `for<'a> Foo<&'a T>`
+    pub path: Path,
+}
 
 // generics.rs (syn 1.0.86)
 enum TypeParamBound {
@@ -40,12 +116,12 @@ impl Parse for TypeParamBound {
         if input.peek(Paren) {
             let content;
             let paren_token = parenthesized!(content in input);
-            let mut bound: TraitBound = content.parse()?;
+            let mut bound: TraitBound = content.parse::<TraitBound>()?;
             bound.paren_token = Some(paren_token);
             return Ok(TypeParamBound::Trait(bound));
         }
 
-        input.parse().map(TypeParamBound::Trait)
+        input.parse::<TraitBound>().map(TypeParamBound::Trait)
     }
 }
 
@@ -317,7 +393,6 @@ impl ToTokens for Generics {
         let mut trailing_or_empty = true;
         for param in self.params.pairs() {
             if let GenericParam::Lifetime(_) = **param.value() {
-                let f = <GenericParam as ToTokens>::to_tokens;
                 <Pair<&GenericParam, &Comma> as ToTokens>::to_tokens(&param, tokens);
                 trailing_or_empty = param.punct().is_some();
             }
