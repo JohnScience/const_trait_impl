@@ -7,16 +7,17 @@ use syn::{
     braced, bracketed,
     ext::IdentExt,
     parenthesized,
-    parse::{Parse, ParseBuffer, ParseStream},
+    parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
     token::{
-        Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Paren, Pound, Unsafe, Add,
+        Add, Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Paren, Pound,
+        Unsafe,
     },
-    AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, ImplItem, Lifetime,
-    LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, PathSegment, Result, Token,
-    Type, TypePath, WhereClause, ItemImpl,
+    AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, ImplItem, ItemImpl, Lifetime,
+    LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, Result, Token, Type, TypePath,
+    WhereClause,
 };
 // syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
 // due to the transitive chain:
@@ -256,8 +257,8 @@ impl Parse for TypeParam {
         let ident: Ident = input.parse()?;
         let colon_token: Option<Token![:]> = input.parse()?;
 
-        let begin_bound = input.fork();
-        let mut is_maybe_const = false;
+        // let begin_bound = input.fork();
+        // let mut is_maybe_const = false;
         let mut bounds = Punctuated::new();
         if colon_token.is_some() {
             loop {
@@ -268,10 +269,10 @@ impl Parse for TypeParam {
 
                 match &value {
                     TypeParamBound::Lifetime(_) => {}
-                    TypeParamBound::Trait(trait_) => {
-                        if let TraitBoundModifier::TildeConst(_) = trait_.modifier {
-                            is_maybe_const = true;
-                        }
+                    TypeParamBound::Trait(_trait_) => {
+                        //if let TraitBoundModifier::TildeConst(_) = trait_.modifier {
+                        //    is_maybe_const = true;
+                        //}
                     }
                 }
 
@@ -284,8 +285,8 @@ impl Parse for TypeParam {
             }
         }
 
-        let mut eq_token: Option<Token![=]> = input.parse()?;
-        let mut default = if eq_token.is_some() {
+        let eq_token: Option<Token![=]> = input.parse()?;
+        let default = if eq_token.is_some() {
             Some(input.parse::<Type>()?)
         } else {
             None
@@ -602,8 +603,10 @@ impl Parse for ItemConstImpl {
 impl From<TraitBoundModifier> for syn::TraitBoundModifier {
     fn from(m: TraitBoundModifier) -> Self {
         match m {
-            TraitBoundModifier::None | TraitBoundModifier::TildeConst(_) => syn::TraitBoundModifier::None,
-            TraitBoundModifier::Maybe(question) => syn::TraitBoundModifier::Maybe(question)
+            TraitBoundModifier::None | TraitBoundModifier::TildeConst(_) => {
+                syn::TraitBoundModifier::None
+            }
+            TraitBoundModifier::Maybe(question) => syn::TraitBoundModifier::Maybe(question),
         }
     }
 }
@@ -614,13 +617,13 @@ impl From<TraitBound> for syn::TraitBound {
             paren_token,
             modifier,
             lifetimes,
-            path
+            path,
         } = b;
         Self {
             paren_token,
             modifier: modifier.into(),
             lifetimes,
-            path
+            path,
         }
     }
 }
@@ -648,12 +651,17 @@ impl From<TypeParam> for syn::TypeParam {
             attrs,
             ident,
             colon_token,
-            bounds: bounds.into_pairs().map(|pair| {
-                match pair {
-                    Pair::<TypeParamBound, Add>::Punctuated(b,add) => Pair::<syn::TypeParamBound, Add>::Punctuated(b.into(), add),
-                    Pair::<TypeParamBound, Add>::End(b) => Pair::<syn::TypeParamBound, Add>::End(b.into())
-                }
-            }).collect::<Punctuated::<syn::TypeParamBound, Add>>(),
+            bounds: bounds
+                .into_pairs()
+                .map(|pair| match pair {
+                    Pair::<TypeParamBound, Add>::Punctuated(b, add) => {
+                        Pair::<syn::TypeParamBound, Add>::Punctuated(b.into(), add)
+                    }
+                    Pair::<TypeParamBound, Add>::End(b) => {
+                        Pair::<syn::TypeParamBound, Add>::End(b.into())
+                    }
+                })
+                .collect::<Punctuated<syn::TypeParamBound, Add>>(),
             eq_token,
             default,
         }
@@ -676,19 +684,24 @@ impl From<Generics> for syn::Generics {
             lt_token,
             params,
             gt_token,
-            where_clause
+            where_clause,
         } = generics;
         // The code below reallocates. Fix it later
         Self {
             lt_token,
-            params: params.into_pairs().map(|pair| {
-                match pair {
-                    Pair::<GenericParam, Comma>::Punctuated(p,comma) => Pair::<syn::GenericParam, Comma>::Punctuated(p.into(), comma),
-                    Pair::<GenericParam, Comma>::End(p) => Pair::<syn::GenericParam, Comma>::End(p.into())
-                }
-            }).collect::<Punctuated::<syn::GenericParam, Comma>>(),
+            params: params
+                .into_pairs()
+                .map(|pair| match pair {
+                    Pair::<GenericParam, Comma>::Punctuated(p, comma) => {
+                        Pair::<syn::GenericParam, Comma>::Punctuated(p.into(), comma)
+                    }
+                    Pair::<GenericParam, Comma>::End(p) => {
+                        Pair::<syn::GenericParam, Comma>::End(p.into())
+                    }
+                })
+                .collect::<Punctuated<syn::GenericParam, Comma>>(),
             gt_token,
-            where_clause
+            where_clause,
         }
     }
 }
@@ -705,7 +718,7 @@ impl From<ItemConstImpl> for ItemImpl {
             trait_,
             self_ty,
             brace_token,
-            items
+            items,
         } = item_const_impl;
         drop(constness);
         Self {
