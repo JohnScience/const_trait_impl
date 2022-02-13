@@ -12,11 +12,11 @@ use syn::{
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
     token::{
-        Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Paren, Pound, Unsafe,
+        Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Paren, Pound, Unsafe, Add,
     },
     AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, ImplItem, Lifetime,
     LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, PathSegment, Result, Token,
-    Type, TypePath, WhereClause,
+    Type, TypePath, WhereClause, ItemImpl,
 };
 // syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
 // due to the transitive chain:
@@ -233,21 +233,21 @@ impl ToTokens for TypeParamBound {
     }
 }
 
-// verbatim.rs (syn 1.0.86)
-mod verbatim {
-    use super::*;
-    pub fn between<'a>(begin: ParseBuffer<'a>, end: ParseStream<'a>) -> TokenStream2 {
-        let end = end.cursor();
-        let mut cursor = begin.cursor();
-        let mut tokens = TokenStream2::new();
-        while cursor != end {
-            let (tt, next) = cursor.token_tree().unwrap();
-            tokens.extend(core::iter::once(tt));
-            cursor = next;
-        }
-        tokens
-    }
-}
+// // verbatim.rs (syn 1.0.86)
+// mod verbatim {
+//     use super::*;
+//     pub fn between<'a>(begin: ParseBuffer<'a>, end: ParseStream<'a>) -> TokenStream2 {
+//         let end = end.cursor();
+//         let mut cursor = begin.cursor();
+//         let mut tokens = TokenStream2::new();
+//         while cursor != end {
+//             let (tt, next) = cursor.token_tree().unwrap();
+//             tokens.extend(core::iter::once(tt));
+//             cursor = next;
+//         }
+//         tokens
+//     }
+// }
 
 // generics.rs (syn 1.0.86)
 impl Parse for TypeParam {
@@ -599,6 +599,129 @@ impl Parse for ItemConstImpl {
     }
 }
 
+impl From<TraitBoundModifier> for syn::TraitBoundModifier {
+    fn from(m: TraitBoundModifier) -> Self {
+        match m {
+            TraitBoundModifier::None | TraitBoundModifier::TildeConst(_) => syn::TraitBoundModifier::None,
+            TraitBoundModifier::Maybe(question) => syn::TraitBoundModifier::Maybe(question)
+        }
+    }
+}
+
+impl From<TraitBound> for syn::TraitBound {
+    fn from(b: TraitBound) -> Self {
+        let TraitBound {
+            paren_token,
+            modifier,
+            lifetimes,
+            path
+        } = b;
+        Self {
+            paren_token,
+            modifier: modifier.into(),
+            lifetimes,
+            path
+        }
+    }
+}
+
+impl From<TypeParamBound> for syn::TypeParamBound {
+    fn from(b: TypeParamBound) -> Self {
+        match b {
+            TypeParamBound::Lifetime(l) => Self::Lifetime(l),
+            TypeParamBound::Trait(t) => Self::Trait(t.into()),
+        }
+    }
+}
+
+impl From<TypeParam> for syn::TypeParam {
+    fn from(t: TypeParam) -> Self {
+        let TypeParam {
+            attrs,
+            ident,
+            colon_token,
+            bounds,
+            eq_token,
+            default,
+        } = t;
+        Self {
+            attrs,
+            ident,
+            colon_token,
+            bounds: bounds.into_pairs().map(|pair| {
+                match pair {
+                    Pair::<TypeParamBound, Add>::Punctuated(b,add) => Pair::<syn::TypeParamBound, Add>::Punctuated(b.into(), add),
+                    Pair::<TypeParamBound, Add>::End(b) => Pair::<syn::TypeParamBound, Add>::End(b.into())
+                }
+            }).collect::<Punctuated::<syn::TypeParamBound, Add>>(),
+            eq_token,
+            default,
+        }
+    }
+}
+
+impl From<GenericParam> for syn::GenericParam {
+    fn from(param: GenericParam) -> Self {
+        match param {
+            GenericParam::Const(c) => syn::GenericParam::Const(c),
+            GenericParam::Lifetime(l) => syn::GenericParam::Lifetime(l),
+            GenericParam::Type(t) => syn::GenericParam::Type(t.into()),
+        }
+    }
+}
+
+impl From<Generics> for syn::Generics {
+    fn from(generics: Generics) -> Self {
+        let Generics {
+            lt_token,
+            params,
+            gt_token,
+            where_clause
+        } = generics;
+        // The code below reallocates. Fix it later
+        Self {
+            lt_token,
+            params: params.into_pairs().map(|pair| {
+                match pair {
+                    Pair::<GenericParam, Comma>::Punctuated(p,comma) => Pair::<syn::GenericParam, Comma>::Punctuated(p.into(), comma),
+                    Pair::<GenericParam, Comma>::End(p) => Pair::<syn::GenericParam, Comma>::End(p.into())
+                }
+            }).collect::<Punctuated::<syn::GenericParam, Comma>>(),
+            gt_token,
+            where_clause
+        }
+    }
+}
+
+impl From<ItemConstImpl> for ItemImpl {
+    fn from(item_const_impl: ItemConstImpl) -> Self {
+        let ItemConstImpl {
+            attrs,
+            defaultness,
+            unsafety,
+            impl_token,
+            generics,
+            constness,
+            trait_,
+            self_ty,
+            brace_token,
+            items
+        } = item_const_impl;
+        drop(constness);
+        Self {
+            attrs,
+            defaultness,
+            unsafety,
+            impl_token,
+            generics: generics.into(),
+            trait_,
+            self_ty,
+            brace_token,
+            items,
+        }
+    }
+}
+
 impl From<ItemConstImpl> for TokenStream {
     #[allow(unused_variables, clippy::let_and_return)]
     fn from(item_impl: ItemConstImpl) -> TokenStream {
@@ -650,7 +773,8 @@ impl From<ItemConstImpl> for TokenStream {
 #[proc_macro_attribute]
 pub fn unconst_trait_impl(_attr_args: TokenStream, item: TokenStream) -> TokenStream {
     let item_const_impl = parse_macro_input!(item as ItemConstImpl);
-    item_const_impl.into()
+    let item_impl: ItemImpl = item_const_impl.into();
+    item_impl.to_token_stream().into()
     // let item_const_impl = parse_macro_input!(item as ItemImpl);
     // item_const_impl.to_token_stream().into()
 }
