@@ -778,12 +778,11 @@ impl From<ItemConstImpl> for TokenStream {
                 .to_token_stream()
                 .into(),
         );
-        // let comment = format!("const S: &str = \"{}\";", ts);
-        // let ts = <TokenStream as std::str::FromStr>::from_str(&comment).unwrap();
         ts
     }
 }
 
+/// Unconditionally turns const trait implementation into non-const
 #[proc_macro]
 pub fn unconst_trait_impl(item: TokenStream) -> TokenStream {
     let item_const_impl = parse_macro_input!(item as ItemConstImpl);
