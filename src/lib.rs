@@ -53,6 +53,7 @@ struct Generics {
 }
 
 // generics.rs (syn 1.0.86)
+#[allow(clippy::large_enum_variant)]
 enum GenericParam {
     /// A generic type parameter: `T: Into<String>`.
     Type(TypeParam),
@@ -487,6 +488,7 @@ impl ToTokens for Generics {
 }
 
 // syn::attr::parsing::parse_inner (syn 1.0.86)
+#[allow(clippy::eval_order_dependence)]
 fn single_parse_inner(input: ParseStream) -> Result<Attribute> {
     let content;
     Ok(Attribute {
@@ -582,7 +584,7 @@ impl Parse for ItemConstImpl {
             items.push(content.parse::<ImplItem>()?);
         }
         if is_impl_for && trait_.is_none() {
-            return Err(Error::new(is_impl_for.span(), "expected trait name"));
+            Err(Error::new(is_impl_for.span(), "expected trait name"))
         } else {
             Ok(ItemConstImpl {
                 attrs,
@@ -714,13 +716,12 @@ impl From<ItemConstImpl> for ItemImpl {
             unsafety,
             impl_token,
             generics,
-            constness,
+            constness: _constness,
             trait_,
             self_ty,
             brace_token,
             items,
         } = item_const_impl;
-        drop(constness);
         Self {
             attrs,
             defaultness,
@@ -783,11 +784,9 @@ impl From<ItemConstImpl> for TokenStream {
     }
 }
 
-#[proc_macro_attribute]
-pub fn unconst_trait_impl(_attr_args: TokenStream, item: TokenStream) -> TokenStream {
+#[proc_macro]
+pub fn unconst_trait_impl(item: TokenStream) -> TokenStream {
     let item_const_impl = parse_macro_input!(item as ItemConstImpl);
     let item_impl: ItemImpl = item_const_impl.into();
     item_impl.to_token_stream().into()
-    // let item_const_impl = parse_macro_input!(item as ItemImpl);
-    // item_const_impl.to_token_stream().into()
 }
