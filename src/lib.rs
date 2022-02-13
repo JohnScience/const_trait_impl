@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 use proc_macro::TokenStream;
 use proc_macro2::{
     Delimiter as Delimiter2, Group as Group2, Span as Span2, TokenStream as TokenStream2,
@@ -785,6 +786,73 @@ impl From<ItemConstImpl> for TokenStream {
 }
 
 /// Unconditionally turns const trait implementation into non-const
+/// 
+/// # Example
+/// 
+/// ```rust, ignore
+/// #![cfg_attr(feature = "const_trait_impl", feature(const_trait_impl))]
+/// #![cfg_attr(feature = "const_default_impls", feature(const_default_impls))]
+/// #![cfg_attr(feature = "const_fn_trait_bound", feature(const_fn_trait_bound))]
+/// 
+/// #[cfg(not(all(
+///     feature = "const_trait_impl",
+///     feature = "const_default_impls",
+///     feature = "const_fn_trait_bound"
+/// )))]
+/// use const_trait_impl::unconst_trait_impl;
+/// use core::{default::Default, marker::PhantomData};
+/// #[cfg(all(
+///     feature = "const_trait_impl",
+///     feature = "const_default_impls",
+///     feature = "const_fn_trait_bound"
+/// ))]
+/// use remove_macro_call::remove_macro_call;
+/// 
+/// // Since ZST is both Eq and and PartialEq, it has structural match
+/// // https://github.com/rust-lang/rust/issues/63438
+/// #[derive(Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd, Copy)]
+/// pub struct ZST<T: ?Sized>(PhantomData<T>);
+/// 
+/// pub trait TraitName {}
+/// 
+/// #[cfg_attr(
+///     all(
+///         feature = "const_trait_impl",
+///         feature = "const_default_impls",
+///         feature = "const_fn_trait_bound"
+///     ),
+///     remove_macro_call
+/// )]
+/// unconst_trait_impl! {
+///     impl<T: ?Sized> const TraitName for ZST<T> {}
+/// }
+/// 
+/// // With `cargo build --features const_trait_impl, const_default_impls, const_fn_trait_bound`
+/// // or with `cargo build --all-features, the code below is expanded as is. Otherwise,
+/// // it gets "unconsted" to be supported by stable toolchain.
+/// #[cfg_attr(
+///     all(
+///         feature = "const_trait_impl",
+///         feature = "const_default_impls",
+///         feature = "const_fn_trait_bound"
+///     ),
+///     remove_macro_call
+/// )]
+/// unconst_trait_impl! {
+///     impl<T: ~const TraitName + ?Sized> const Default for ZST<T> {
+///         fn default() -> Self {
+///             ZST(Default::default())
+///         }
+///     }
+/// }
+/// ```
+/// 
+/// **Note**: In the real code, the example above could be replaced with a simpler version relying on [`cfg_aliases`](https://crates.io/crates/cfg_aliases) crate.
+/// 
+/// You can learn more about `remove_macro_call` here:
+/// * [GitHub](https://github.com/JohnScience/remove_macro_call)
+/// * [crates.io](https://crates.io/crates/remove_macro_call)
+
 #[proc_macro]
 pub fn unconst_trait_impl(item: TokenStream) -> TokenStream {
     let item_const_impl = parse_macro_input!(item as ItemConstImpl);
