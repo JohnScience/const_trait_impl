@@ -28,6 +28,8 @@ use syn::{
 // use syn::TypeParamBound;
 // use syn::TraitBound;
 // use syn::TraitBoundModifier;
+//
+// TODO: track issue: <https://github.com/dtolnay/syn/issues/1130>
 
 struct ItemConstImpl {
     attrs: Vec<Attribute>,
