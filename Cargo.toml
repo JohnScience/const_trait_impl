@@ -1,13 +1,13 @@
 [package]
-name = "const_trait_impl"
-version = "0.1.1"
+name = "unconst_trait_impl"
+version = "0.1.0"
 authors = ["Dmitrii Demenev <demenev.dmitriy1@gmail.com>"]
 edition = "2021"
 rust-version = "1.56.1" # https://github.com/foresterre/cargo-msrv
 description = "Function-like macro that \"unconsts\" trait implementations"
-documentation = "https://docs.rs/const_trait_impl"
+documentation = "https://docs.rs/unconst_trait_impl"
 readme = "README.md"
-repository = "https://github.com/JohnScience/const_trait_impl"
+repository = "https://github.com/JohnScience/unconst_trait_impl"
 license = "MIT OR Apache-2.0"
 # license-file | not needed
 keywords = ["const", "macro", "trait", "impl"]

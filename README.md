@@ -1,6 +1,6 @@
 # Function-like macro that "unconsts" trait implementations
 
-`const_trait_impl::unconst_trait_impl` turns the Nightly syntax for constant trait implementations into analogous non-const syntax that is accepted on stable toolchain.
+`unconst_trait_impl::unconst_trait_impl` turns the Nightly syntax for constant trait implementations into analogous non-const syntax that is accepted on stable toolchain.
 
 The list of features taken into account:
 * [const_trait_impl](https://doc.rust-lang.org/nightly/unstable-book/language-features/const-trait-impl.html)
@@ -22,7 +22,7 @@ However, with [`cfg_attr`] and `remove_macro_call` [attributes][attribute], `unc
     feature = "const_default_impls",
     feature = "const_fn_trait_bound"
 )))]
-use const_trait_impl::unconst_trait_impl;
+use unconst_trait_impl::unconst_trait_impl;
 use core::{default::Default, marker::PhantomData};
 #[cfg(all(
     feature = "const_trait_impl",

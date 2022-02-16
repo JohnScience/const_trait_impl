@@ -799,7 +799,7 @@ impl From<ItemConstImpl> for TokenStream {
 ///     feature = "const_default_impls",
 ///     feature = "const_fn_trait_bound"
 /// )))]
-/// use const_trait_impl::unconst_trait_impl;
+/// use unconst_trait_impl::unconst_trait_impl;
 /// use core::{default::Default, marker::PhantomData};
 /// #[cfg(all(
 ///     feature = "const_trait_impl",
