@@ -18,7 +18,6 @@ use syn::{
     },
     AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, ImplItem, ItemImpl, Lifetime,
     LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, Result, Token, Type, TypePath,
-    WhereClause,
 };
 // syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
 // due to the transitive chain:
@@ -30,7 +29,12 @@ use syn::{
 // use syn::TraitBound;
 // use syn::TraitBoundModifier;
 //
+// use syn::Generics;
+// use syn::WhereClause;
+use syn::WherePredicate;
+//
 // TODO: track issue: <https://github.com/dtolnay/syn/issues/1130>
+
 
 struct ItemConstImpl {
     attrs: Vec<Attribute>,
@@ -104,6 +108,68 @@ enum TraitBoundModifier {
 struct TildeConst {
     tilde: Token![~],
     const_: Token![const],
+}
+
+// generics.rs (syn 1.0.86)
+struct WhereClause {
+    pub where_token: Token![where],
+    pub predicates: Punctuated<WherePredicate, Token![,]>,
+}
+
+// generics.rs (syn 1.0.86)
+// Originally, the code was generated with a macro
+impl ToTokens for WhereClause {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        self.where_token.to_tokens(tokens);
+        self.predicates.to_tokens(tokens);
+    }
+}
+
+// generics.rs (syn 1.0.86)
+// Originally, the code was generated with a macro
+impl Parse for WhereClause {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(WhereClause {
+            where_token: input.parse()?,
+            predicates: {
+                let mut predicates = Punctuated::new();
+                loop {
+                    if input.is_empty()
+                        || input.peek(syn::token::Brace)
+                        || input.peek(syn::token::Comma)
+                        || input.peek(syn::token::Semi)
+                        || input.peek(syn::token::Colon)
+                            && !input.peek(syn::token::Colon2)
+                        || input.peek(syn::token::Eq)
+                    {
+                        break;
+                    }
+                    let value = input.parse()?;
+                    predicates.push_value(value);
+                    if !input.peek(syn::token::Comma) {
+                        break;
+                    }
+                    let punct = input.parse()?;
+                    predicates.push_punct(punct);
+                }
+                predicates
+            },
+        })
+    }
+}
+
+trait LocalParse: Sized {
+    fn local_parse(input: ParseStream) -> Result<Self>;
+}
+
+impl LocalParse for Option<WhereClause> {
+    fn local_parse(input: ParseStream) -> Result<Self> {
+        if input.peek(syn::token::Where) {
+            input.parse().map(Some)
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 impl ToTokens for TildeConst {
@@ -576,7 +642,7 @@ impl Parse for ItemConstImpl {
         } else {
             return Err(Error::new(Span2::call_site(), "expected trait impl block"));
         };
-        generics.where_clause = input.parse::<Option<WhereClause>>()?;
+        generics.where_clause = Option::<WhereClause>::local_parse(input)?;
 
         let content;
         let brace_token = braced!(content in input);
@@ -683,6 +749,15 @@ impl From<GenericParam> for syn::GenericParam {
     }
 }
 
+impl From<WhereClause> for syn::WhereClause {
+    fn from(WhereClause { where_token, predicates }: WhereClause) -> Self {
+        Self {
+            where_token,
+            predicates
+        }
+    }
+}
+
 impl From<Generics> for syn::Generics {
     fn from(generics: Generics) -> Self {
         let Generics {
@@ -706,7 +781,7 @@ impl From<Generics> for syn::Generics {
                 })
                 .collect::<Punctuated<syn::GenericParam, Comma>>(),
             gt_token,
-            where_clause,
+            where_clause: where_clause.map(<WhereClause as Into<syn::WhereClause>>::into),
         }
     }
 }
@@ -754,6 +829,12 @@ impl From<ItemConstImpl> for TokenStream {
             brace_token,
             items,
         } = item_impl;
+        let Generics {
+            lt_token,
+            gt_token,
+            params,
+            where_clause,
+        } = generics;
         let mut ts = TokenStream::new();
         for attr in attrs.into_iter() {
             ts.extend::<TokenStream>(attr.to_token_stream().into());
@@ -761,7 +842,9 @@ impl From<ItemConstImpl> for TokenStream {
         ts.extend::<TokenStream>(defaultness.to_token_stream().into());
         ts.extend::<TokenStream>(unsafety.to_token_stream().into());
         ts.extend::<TokenStream>(impl_token.to_token_stream().into());
-        ts.extend::<TokenStream>(generics.to_token_stream().into());
+        ts.extend::<TokenStream>(lt_token.to_token_stream().into());
+        ts.extend::<TokenStream>(params.to_token_stream().into());
+        ts.extend::<TokenStream>(gt_token.to_token_stream().into());
         ts.extend::<TokenStream>(constness.to_token_stream().into());
         match trait_ {
             None => {}
@@ -772,6 +855,7 @@ impl From<ItemConstImpl> for TokenStream {
             }
         };
         ts.extend::<TokenStream>(self_ty.to_token_stream().into());
+        ts.extend::<TokenStream>(where_clause.to_token_stream().into());
         let mut nested_ts = TokenStream2::new();
         for item in items.into_iter() {
             nested_ts.extend(item.to_token_stream());
@@ -857,5 +941,10 @@ impl From<ItemConstImpl> for TokenStream {
 pub fn unconst_trait_impl(item: TokenStream) -> TokenStream {
     let item_const_impl = parse_macro_input!(item as ItemConstImpl);
     let item_impl: ItemImpl = item_const_impl.into();
-    item_impl.to_token_stream().into()
+    
+    //item_impl.to_token_stream().into()
+
+    let comment = format!("const S: &str = \"{}\";", item_impl.to_token_stream());
+    let ts = <TokenStream as std::str::FromStr>::from_str(&comment).unwrap();
+    ts
 }
