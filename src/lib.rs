@@ -21,7 +21,7 @@ use syn::{
     PredicateLifetime, PredicateEq
 };
 // syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
-// due to the transitive chain:
+// due to the two transitive chains:
 //
 // use syn::Generics;
 // use syn::GenericParam;
@@ -33,7 +33,7 @@ use syn::{
 // use syn::Generics;
 // use syn::WhereClause;
 // use syn::WherePredicate;
-use syn::PredicateType;
+// use syn::PredicateType;
 //
 // TODO: track issue: <https://github.com/dtolnay/syn/issues/1130>
 
@@ -112,6 +112,16 @@ struct TildeConst {
     const_: Token![const],
 }
 
+struct PredicateType {
+    /// Any lifetimes from a `for` binding
+    pub lifetimes: Option<BoundLifetimes>,
+    /// The type being bounded
+    pub bounded_ty: Type,
+    pub colon_token: Token![:],
+    /// Trait and lifetime bounds (`Clone+Send+'static`)
+    pub bounds: Punctuated<TypeParamBound, Token![+]>,
+}
+
 // generics.rs (syn 1.0.86)
 enum WherePredicate {
     /// A type predicate in a `where` clause: `for<'c> Foo<'c>: Trait<'c>`.
@@ -129,6 +139,38 @@ enum WherePredicate {
 struct WhereClause {
     pub where_token: Token![where],
     pub predicates: Punctuated<WherePredicate, Token![,]>,
+}
+
+// generics.rs (syn 1.0.86)
+// Originally, the code was generated with a macro
+impl ToTokens for PredicateType {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        self.lifetimes.to_tokens(tokens);
+        self.bounded_ty.to_tokens(tokens);
+        self.colon_token.to_tokens(tokens);
+        self.bounds.to_tokens(tokens);
+    }
+}
+
+impl From<PredicateType> for syn::PredicateType {
+    fn from(PredicateType { lifetimes, bounded_ty, colon_token, bounds }: PredicateType) -> Self {
+        Self {
+            lifetimes,
+            bounded_ty,
+            colon_token,
+            bounds: bounds
+                .into_pairs()
+                .map(|pair| match pair {
+                    Pair::<TypeParamBound, Add>::Punctuated(b, add) => {
+                        Pair::<syn::TypeParamBound, Add>::Punctuated(b.into(), add)
+                    }
+                    Pair::<TypeParamBound, Add>::End(b) => {
+                        Pair::<syn::TypeParamBound, Add>::End(b.into())
+                    }
+                })
+                .collect::<Punctuated<syn::TypeParamBound, Add>>(),
+        }
+    }
 }
 
 // generics.rs (syn 1.0.86)
@@ -845,7 +887,7 @@ impl From<WherePredicate> for syn::WherePredicate {
         match predicate {
             WherePredicate::Eq(eq) => syn::WherePredicate::Eq(eq),
             WherePredicate::Lifetime(lt) => syn::WherePredicate::Lifetime(lt),
-            WherePredicate::Type(ty) => syn::WherePredicate::Type(ty),
+            WherePredicate::Type(ty) => syn::WherePredicate::Type(ty.into()),
         }
     }
 }
