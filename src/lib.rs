@@ -1095,9 +1095,9 @@ pub fn unconst_trait_impl(item: TokenStream) -> TokenStream {
     let item_const_impl = parse_macro_input!(item as ItemConstImpl);
     let item_impl: ItemImpl = item_const_impl.into();
     
-    //item_impl.to_token_stream().into()
+    item_impl.to_token_stream().into()
 
-    let comment = format!("const S: &str = \"{}\";", item_impl.to_token_stream());
-    let ts = <TokenStream as std::str::FromStr>::from_str(&comment).unwrap();
-    ts
+    //let comment = format!("const S: &str = \"{}\";", item_impl.to_token_stream());
+    //let ts = <TokenStream as std::str::FromStr>::from_str(&comment).unwrap();
+    //ts
 }
