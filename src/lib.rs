@@ -121,6 +121,7 @@ enum WherePredicate {
     Lifetime(PredicateLifetime),
 
     /// An equality predicate in a `where` clause (unsupported).
+    #[allow(dead_code)]
     Eq(PredicateEq),
 }
 
