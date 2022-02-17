@@ -18,6 +18,7 @@ use syn::{
     },
     AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, ImplItem, ItemImpl, Lifetime,
     LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, Result, Token, Type, TypePath,
+    PredicateLifetime, PredicateEq
 };
 // syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
 // due to the transitive chain:
@@ -31,7 +32,8 @@ use syn::{
 //
 // use syn::Generics;
 // use syn::WhereClause;
-use syn::WherePredicate;
+// use syn::WherePredicate;
+use syn::PredicateType;
 //
 // TODO: track issue: <https://github.com/dtolnay/syn/issues/1130>
 
@@ -111,9 +113,97 @@ struct TildeConst {
 }
 
 // generics.rs (syn 1.0.86)
+enum WherePredicate {
+    /// A type predicate in a `where` clause: `for<'c> Foo<'c>: Trait<'c>`.
+    Type(PredicateType),
+
+    /// A lifetime predicate in a `where` clause: `'a: 'b + 'c`.
+    Lifetime(PredicateLifetime),
+
+    /// An equality predicate in a `where` clause (unsupported).
+    Eq(PredicateEq),
+}
+
+// generics.rs (syn 1.0.86)
 struct WhereClause {
     pub where_token: Token![where],
     pub predicates: Punctuated<WherePredicate, Token![,]>,
+}
+
+// generics.rs (syn 1.0.86)
+// Originally, the code was generated with a macro
+impl ToTokens for WherePredicate {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        match self {
+            WherePredicate::Type(t) => t.to_tokens(tokens),
+            WherePredicate::Lifetime(lt) => lt.to_tokens(tokens),
+            WherePredicate::Eq(eq) => eq.to_tokens(tokens),
+        }
+    }
+}
+
+// generics.rs (syn 1.0.86)
+// Originally, the code was generated with a macro
+impl Parse for WherePredicate {
+    fn parse(input: ParseStream) -> Result<Self> {
+        if input.peek(Lifetime) && input.peek2(syn::token::Colon) {
+            Ok(WherePredicate::Lifetime(PredicateLifetime {
+                lifetime: input.parse()?,
+                colon_token: input.parse()?,
+                bounds: {
+                    let mut bounds = Punctuated::new();
+                    loop {
+                        if input.is_empty()
+                            || input.peek(syn::token::Brace)
+                            || input.peek(syn::token::Comma)
+                            || input.peek(syn::token::Semi)
+                            || input.peek(syn::token::Colon)
+                            || input.peek(syn::token::Eq)
+                        {
+                            break;
+                        }
+                        let value = input.parse()?;
+                        bounds.push_value(value);
+                        if !input.peek(syn::token::Add) {
+                            break;
+                        }
+                        let punct = input.parse()?;
+                        bounds.push_punct(punct);
+                    }
+                    bounds
+                },
+            }))
+        } else {
+            Ok(WherePredicate::Type(PredicateType {
+                lifetimes: input.parse()?,
+                bounded_ty: input.parse()?,
+                colon_token: input.parse()?,
+                bounds: {
+                    let mut bounds = Punctuated::new();
+                    loop {
+                        if input.is_empty()
+                            || input.peek(syn::token::Brace)
+                            || input.peek(syn::token::Comma)
+                            || input.peek(syn::token::Semi)
+                            || input.peek(syn::token::Colon)
+                                && !input.peek(syn::token::Colon2)
+                            || input.peek(syn::token::Eq)
+                        {
+                            break;
+                        }
+                        let value = input.parse()?;
+                        bounds.push_value(value);
+                        if !input.peek(syn::token::Add) {
+                            break;
+                        }
+                        let punct = input.parse()?;
+                        bounds.push_punct(punct);
+                    }
+                    bounds
+                },
+            }))
+        }
+    }
 }
 
 // generics.rs (syn 1.0.86)
@@ -144,7 +234,7 @@ impl Parse for WhereClause {
                     {
                         break;
                     }
-                    let value = input.parse()?;
+                    let value = input.parse::<WherePredicate>()?;
                     predicates.push_value(value);
                     if !input.peek(syn::token::Comma) {
                         break;
@@ -749,11 +839,31 @@ impl From<GenericParam> for syn::GenericParam {
     }
 }
 
+impl From<WherePredicate> for syn::WherePredicate {
+    fn from(predicate: WherePredicate) -> Self {
+        match predicate {
+            WherePredicate::Eq(eq) => syn::WherePredicate::Eq(eq),
+            WherePredicate::Lifetime(lt) => syn::WherePredicate::Lifetime(lt),
+            WherePredicate::Type(ty) => syn::WherePredicate::Type(ty),
+        }
+    }
+}
+
 impl From<WhereClause> for syn::WhereClause {
     fn from(WhereClause { where_token, predicates }: WhereClause) -> Self {
         Self {
             where_token,
-            predicates
+            predicates: predicates
+                .into_pairs()
+                .map(|pair| match pair {
+                    Pair::<WherePredicate, Comma>::Punctuated(p, comma) => {
+                        Pair::<syn::WherePredicate, Comma>::Punctuated(p.into(), comma)
+                    }
+                    Pair::<WherePredicate, Comma>::End(p) => {
+                        Pair::<syn::WherePredicate, Comma>::End(p.into())
+                    }
+                })
+                .collect::<Punctuated<syn::WherePredicate, Comma>>(),
         }
     }
 }
