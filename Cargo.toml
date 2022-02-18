@@ -16,6 +16,14 @@ categories = ["rust-patterns"] # https://crates.io/category_slugs
 # build | not needed
 # links | not needed
 # exclude | not needed
+include = [
+    "/Cargo.toml",
+    "/LICENSE_APACHE",
+    "/LICENSE_MIT",
+    "/README.md",
+    "/src/lib.rs",
+    "/tests/**",
+]
 autobins = false
 autoexamples = false
 autotests = false
