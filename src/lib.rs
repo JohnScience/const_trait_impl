@@ -34,6 +34,7 @@ use syn::{
 // use syn::WhereClause;
 // use syn::WherePredicate;
 // use syn::PredicateType;
+// use syn::TypeParamBound;
 //
 // TODO: track issue: <https://github.com/dtolnay/syn/issues/1130>
 
@@ -160,6 +161,49 @@ impl From<PredicateType> for syn::PredicateType {
             colon_token,
             bounds: bounds
                 .into_pairs()
+                .filter_map(|pair| {
+                    let drop_bound_filter_map = |b: TypeParamBound| {
+                        if let TypeParamBound::Trait(tb) = b {
+                            let TraitBound {
+                                paren_token,
+                                modifier,
+                                lifetimes,
+                                path
+                            } = tb;
+                            match modifier {
+                                TraitBoundModifier::TildeConst(tc) => {
+                                    if path.segments.last().unwrap().ident.to_string() == "Drop" {
+                                        None 
+                                    } else {
+                                        let modifier = TraitBoundModifier::TildeConst(tc);
+                                        let tb = TraitBound {
+                                            paren_token,
+                                            modifier,
+                                            lifetimes,
+                                            path
+                                        };
+                                        Some(TypeParamBound::Trait(tb))
+                                    }
+                                },
+                                _ => {
+                                    let tb = TraitBound {
+                                        paren_token,
+                                        modifier,
+                                        lifetimes,
+                                        path
+                                    };
+                                    Some(TypeParamBound::Trait(tb))
+                                }
+                            }
+                        } else { Some(b) }
+                    };
+                    match pair {
+                        Pair::<TypeParamBound, Add>::Punctuated(b, add) => {
+                            drop_bound_filter_map(b).map(|b| Pair::<TypeParamBound, Add>::Punctuated(b, add))
+                        },
+                        Pair::<TypeParamBound, Add>::End(b) => drop_bound_filter_map(b).map(Pair::<TypeParamBound, Add>::End),
+                    }
+                })
                 .map(|pair| match pair {
                     Pair::<TypeParamBound, Add>::Punctuated(b, add) => {
                         Pair::<syn::TypeParamBound, Add>::Punctuated(b.into(), add)
