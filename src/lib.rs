@@ -3,7 +3,7 @@ use proc_macro::TokenStream;
 use proc_macro2::{
     Delimiter as Delimiter2, Group as Group2, Span as Span2, TokenStream as TokenStream2,
 };
-use quote::{ToTokens, TokenStreamExt};
+use quote::ToTokens;
 use syn::{
     braced, bracketed,
     ext::IdentExt,
@@ -16,9 +16,9 @@ use syn::{
         Add, Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Paren, Pound,
         Unsafe,
     },
-    AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, ImplItem, ItemImpl, Lifetime,
-    LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, Result, Token, Type, TypePath,
-    PredicateLifetime, PredicateEq
+    AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, ItemImpl, Lifetime,
+    LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, PredicateEq,
+    PredicateLifetime, Result, Token, Type, TypePath,
 };
 // syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
 // due to the two transitive chains:
@@ -36,8 +36,11 @@ use syn::{
 // use syn::PredicateType;
 // use syn::TypeParamBound;
 //
+use syn::ImplItem;
+//
 // TODO: track issue: <https://github.com/dtolnay/syn/issues/1130>
 
+mod to_tokens;
 
 struct ItemConstImpl {
     attrs: Vec<Attribute>,
@@ -53,9 +56,52 @@ struct ItemConstImpl {
     items: Vec<ImplItem>,
 }
 
+// enum ImplItem {
+//     /// An associated constant within an impl block.
+//     Const(ImplItemConst),
+//
+//     /// A method within an impl block.
+//     Method(ImplItemMethod),
+//
+//     /// An associated type within an impl block.
+//     Type(ImplItemType),
+//
+//     /// A macro invocation within an impl block.
+//     Macro(ImplItemMacro),
+//
+//     /// Tokens within an impl block not interpreted by Syn.
+//     Verbatim(TokenStream),
+//
+//     // // The following is the only supported idiom for exhaustive matching of
+//     // // this enum.
+//     // //
+//     // //     match expr {
+//     // //         ImplItem::Const(e) => {...}
+//     // //         ImplItem::Method(e) => {...}
+//     // //         ...
+//     // //         ImplItem::Verbatim(e) => {...}
+//     // //
+//     // //         #[cfg(test)]
+//     // //         ImplItem::__TestExhaustive(_) => unimplemented!(),
+//     // //         #[cfg(not(test))]
+//     // //         _ => { /* some sane fallback */ }
+//     // //     }
+//     // //
+//     // // This way we fail your tests but don't break your library when adding
+//     // // a variant. You will be notified by a test failure when a variant is
+//     // // added, so that you can add code to handle it, but your library will
+//     // // continue to compile and work for downstream users in the interim.
+//     // //
+//     // // Once `deny(reachable)` is available in rustc, ImplItem will be
+//     // // reimplemented as a non_exhaustive enum.
+//     // // https://github.com/rust-lang/rust/issues/44109#issuecomment-521781237
+//     // #[doc(hidden)]
+//     // __TestExhaustive(crate::private),
+// }
+
 // generics.rs (syn 1.0.86)
 #[derive(Default)]
-struct Generics {
+pub(crate) struct Generics {
     lt_token: Option<Lt>,
     params: Punctuated<GenericParam, Comma>,
     gt_token: Option<Gt>,
@@ -64,7 +110,7 @@ struct Generics {
 
 // generics.rs (syn 1.0.86)
 #[allow(clippy::large_enum_variant)]
-enum GenericParam {
+pub(crate) enum GenericParam {
     /// A generic type parameter: `T: Into<String>`.
     Type(TypeParam),
 
@@ -86,13 +132,13 @@ struct TypeParam {
 }
 
 // generics.rs (syn 1.0.86)
-enum TypeParamBound {
+pub(crate) enum TypeParamBound {
     Trait(TraitBound),
     Lifetime(Lifetime),
 }
 
 // generics.rs (syn 1.0.86)
-struct TraitBound {
+pub(crate) struct TraitBound {
     pub paren_token: Option<Paren>,
     pub modifier: TraitBoundModifier,
     /// The `for<'a>` in `for<'a> Foo<&'a T>`
@@ -102,18 +148,18 @@ struct TraitBound {
 }
 
 // generics.rs (syn 1.0.86)
-enum TraitBoundModifier {
+pub(crate) enum TraitBoundModifier {
     None,
     Maybe(Token![?]),
     TildeConst(TildeConst),
 }
 
-struct TildeConst {
+pub(crate) struct TildeConst {
     tilde: Token![~],
     const_: Token![const],
 }
 
-struct PredicateType {
+pub(crate) struct PredicateType {
     /// Any lifetimes from a `for` binding
     pub lifetimes: Option<BoundLifetimes>,
     /// The type being bounded
@@ -124,7 +170,7 @@ struct PredicateType {
 }
 
 // generics.rs (syn 1.0.86)
-enum WherePredicate {
+pub(crate) enum WherePredicate {
     /// A type predicate in a `where` clause: `for<'c> Foo<'c>: Trait<'c>`.
     Type(PredicateType),
 
@@ -137,24 +183,20 @@ enum WherePredicate {
 }
 
 // generics.rs (syn 1.0.86)
-struct WhereClause {
+pub(crate) struct WhereClause {
     pub where_token: Token![where],
     pub predicates: Punctuated<WherePredicate, Token![,]>,
 }
 
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
-impl ToTokens for PredicateType {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        self.lifetimes.to_tokens(tokens);
-        self.bounded_ty.to_tokens(tokens);
-        self.colon_token.to_tokens(tokens);
-        self.bounds.to_tokens(tokens);
-    }
-}
-
 impl From<PredicateType> for syn::PredicateType {
-    fn from(PredicateType { lifetimes, bounded_ty, colon_token, bounds }: PredicateType) -> Self {
+    fn from(
+        PredicateType {
+            lifetimes,
+            bounded_ty,
+            colon_token,
+            bounds,
+        }: PredicateType,
+    ) -> Self {
         Self {
             lifetimes,
             bounded_ty,
@@ -168,40 +210,43 @@ impl From<PredicateType> for syn::PredicateType {
                                 paren_token,
                                 modifier,
                                 lifetimes,
-                                path
+                                path,
                             } = tb;
                             match modifier {
                                 TraitBoundModifier::TildeConst(tc) => {
                                     if path.segments.last().unwrap().ident.to_string() == "Drop" {
-                                        None 
+                                        None
                                     } else {
                                         let modifier = TraitBoundModifier::TildeConst(tc);
                                         let tb = TraitBound {
                                             paren_token,
                                             modifier,
                                             lifetimes,
-                                            path
+                                            path,
                                         };
                                         Some(TypeParamBound::Trait(tb))
                                     }
-                                },
+                                }
                                 _ => {
                                     let tb = TraitBound {
                                         paren_token,
                                         modifier,
                                         lifetimes,
-                                        path
+                                        path,
                                     };
                                     Some(TypeParamBound::Trait(tb))
                                 }
                             }
-                        } else { Some(b) }
+                        } else {
+                            Some(b)
+                        }
                     };
                     match pair {
-                        Pair::<TypeParamBound, Add>::Punctuated(b, add) => {
-                            drop_bound_filter_map(b).map(|b| Pair::<TypeParamBound, Add>::Punctuated(b, add))
-                        },
-                        Pair::<TypeParamBound, Add>::End(b) => drop_bound_filter_map(b).map(Pair::<TypeParamBound, Add>::End),
+                        Pair::<TypeParamBound, Add>::Punctuated(b, add) => drop_bound_filter_map(b)
+                            .map(|b| Pair::<TypeParamBound, Add>::Punctuated(b, add)),
+                        Pair::<TypeParamBound, Add>::End(b) => {
+                            drop_bound_filter_map(b).map(Pair::<TypeParamBound, Add>::End)
+                        }
                     }
                 })
                 .map(|pair| match pair {
@@ -213,18 +258,6 @@ impl From<PredicateType> for syn::PredicateType {
                     }
                 })
                 .collect::<Punctuated<syn::TypeParamBound, Add>>(),
-        }
-    }
-}
-
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
-impl ToTokens for WherePredicate {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        match self {
-            WherePredicate::Type(t) => t.to_tokens(tokens),
-            WherePredicate::Lifetime(lt) => lt.to_tokens(tokens),
-            WherePredicate::Eq(eq) => eq.to_tokens(tokens),
         }
     }
 }
@@ -272,8 +305,7 @@ impl Parse for WherePredicate {
                             || input.peek(syn::token::Brace)
                             || input.peek(syn::token::Comma)
                             || input.peek(syn::token::Semi)
-                            || input.peek(syn::token::Colon)
-                                && !input.peek(syn::token::Colon2)
+                            || input.peek(syn::token::Colon) && !input.peek(syn::token::Colon2)
                             || input.peek(syn::token::Eq)
                         {
                             break;
@@ -295,15 +327,6 @@ impl Parse for WherePredicate {
 
 // generics.rs (syn 1.0.86)
 // Originally, the code was generated with a macro
-impl ToTokens for WhereClause {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        self.where_token.to_tokens(tokens);
-        self.predicates.to_tokens(tokens);
-    }
-}
-
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
 impl Parse for WhereClause {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(WhereClause {
@@ -315,8 +338,7 @@ impl Parse for WhereClause {
                         || input.peek(syn::token::Brace)
                         || input.peek(syn::token::Comma)
                         || input.peek(syn::token::Semi)
-                        || input.peek(syn::token::Colon)
-                            && !input.peek(syn::token::Colon2)
+                        || input.peek(syn::token::Colon) && !input.peek(syn::token::Colon2)
                         || input.peek(syn::token::Eq)
                     {
                         break;
@@ -349,13 +371,6 @@ impl LocalParse for Option<WhereClause> {
     }
 }
 
-impl ToTokens for TildeConst {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        self.tilde.to_tokens(tokens);
-        self.const_.to_tokens(tokens);
-    }
-}
-
 impl Parse for TildeConst {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(Self {
@@ -374,36 +389,6 @@ impl Parse for TraitBoundModifier {
             input.parse().map(TraitBoundModifier::TildeConst)
         } else {
             Ok(TraitBoundModifier::None)
-        }
-    }
-}
-
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
-impl ToTokens for TraitBoundModifier {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        match self {
-            TraitBoundModifier::None => {}
-            TraitBoundModifier::Maybe(t) => t.to_tokens(tokens),
-            TraitBoundModifier::TildeConst(tilde_const) => tilde_const.to_tokens(tokens),
-        }
-    }
-}
-
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
-impl ToTokens for TraitBound {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        let to_tokens = |tokens: &mut TokenStream2| {
-            self.modifier.to_tokens(tokens);
-            self.lifetimes.to_tokens(tokens);
-            {
-                self.path.to_tokens(tokens);
-            }
-        };
-        match &self.paren_token {
-            Some(paren) => paren.surround(tokens, to_tokens),
-            None => to_tokens(tokens),
         }
     }
 }
@@ -467,17 +452,6 @@ impl Parse for TypeParamBound {
         }
 
         input.parse::<TraitBound>().map(TypeParamBound::Trait)
-    }
-}
-
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
-impl ToTokens for TypeParamBound {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        match self {
-            TypeParamBound::Trait(t) => t.to_tokens(tokens),
-            TypeParamBound::Lifetime(l) => l.to_tokens(tokens),
-        }
     }
 }
 
@@ -556,68 +530,6 @@ impl Parse for TypeParam {
     }
 }
 
-// syn::attr (syn 1.0.86)
-impl<'a> FilterAttrs<'a> for &'a [Attribute] {
-    type Ret = core::iter::Filter<core::slice::Iter<'a, Attribute>, fn(&&Attribute) -> bool>;
-
-    fn outer(self) -> Self::Ret {
-        fn is_outer(attr: &&Attribute) -> bool {
-            match attr.style {
-                AttrStyle::Outer => true,
-                AttrStyle::Inner(_) => false,
-            }
-        }
-        self.iter().filter(is_outer)
-    }
-
-    fn inner(self) -> Self::Ret {
-        fn is_inner(attr: &&Attribute) -> bool {
-            match attr.style {
-                AttrStyle::Inner(_) => true,
-                AttrStyle::Outer => false,
-            }
-        }
-        self.iter().filter(is_inner)
-    }
-}
-
-// syn::attr (syn 1.0.86)
-trait FilterAttrs<'a> {
-    type Ret: Iterator<Item = &'a Attribute>;
-
-    fn outer(self) -> Self::Ret;
-    fn inner(self) -> Self::Ret;
-}
-
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
-impl ToTokens for TypeParam {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        tokens.append_all(self.attrs.outer());
-        self.ident.to_tokens(tokens);
-        if !self.bounds.is_empty() {
-            TokensOrDefault(&self.colon_token).to_tokens(tokens);
-            self.bounds.to_tokens(tokens);
-        }
-        if let Some(default) = &self.default {
-            TokensOrDefault(&self.eq_token).to_tokens(tokens);
-            default.to_tokens(tokens);
-        }
-    }
-}
-
-// generics.rs (syn 1.0.86)
-// Originally, the code was generated with a macro
-impl ToTokens for GenericParam {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        match self {
-            GenericParam::Type(_e) => _e.to_tokens(tokens),
-            GenericParam::Lifetime(_e) => _e.to_tokens(tokens),
-            GenericParam::Const(_e) => _e.to_tokens(tokens),
-        }
-    }
-}
-
 // generics.rs (syn 1.0.86)
 impl Parse for Generics {
     fn parse(input: ParseStream) -> Result<Self> {
@@ -681,57 +593,7 @@ impl Parse for Generics {
     }
 }
 
-struct TokensOrDefault<'a, T: 'a>(pub &'a Option<T>);
-
-impl<'a, T> ToTokens for TokensOrDefault<'a, T>
-where
-    T: ToTokens + Default,
-{
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        match self.0 {
-            Some(t) => t.to_tokens(tokens),
-            None => T::default().to_tokens(tokens),
-        }
-    }
-}
-
-// generics.rs (syn 1.0.86)
-impl ToTokens for Generics {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        if self.params.is_empty() {
-            return;
-        }
-
-        TokensOrDefault(&self.lt_token).to_tokens(tokens);
-
-        // Print lifetimes before types and consts, regardless of their
-        // order in self.params.
-        //
-        // TODO: ordering rules for const parameters vs type parameters have
-        // not been settled yet. https://github.com/rust-lang/rust/issues/44580
-        let mut trailing_or_empty = true;
-        for param in self.params.pairs() {
-            if let GenericParam::Lifetime(_) = **param.value() {
-                <Pair<&GenericParam, &Comma> as ToTokens>::to_tokens(&param, tokens);
-                trailing_or_empty = param.punct().is_some();
-            }
-        }
-        for param in self.params.pairs() {
-            match **param.value() {
-                GenericParam::Type(_) | GenericParam::Const(_) => {
-                    if !trailing_or_empty {
-                        <Token![,]>::default().to_tokens(tokens);
-                        trailing_or_empty = true;
-                    }
-                    param.to_tokens(tokens);
-                }
-                GenericParam::Lifetime(_) => {}
-            }
-        }
-
-        TokensOrDefault(&self.gt_token).to_tokens(tokens);
-    }
-}
+pub(crate) struct TokensOrDefault<'a, T: 'a>(pub &'a Option<T>);
 
 // syn::attr::parsing::parse_inner (syn 1.0.86)
 #[allow(clippy::eval_order_dependence)]
@@ -908,40 +770,43 @@ impl From<TypeParam> for syn::TypeParam {
                                 paren_token,
                                 modifier,
                                 lifetimes,
-                                path
+                                path,
                             } = tb;
                             match modifier {
                                 TraitBoundModifier::TildeConst(tc) => {
                                     if path.segments.last().unwrap().ident.to_string() == "Drop" {
-                                        None 
+                                        None
                                     } else {
                                         let modifier = TraitBoundModifier::TildeConst(tc);
                                         let tb = TraitBound {
                                             paren_token,
                                             modifier,
                                             lifetimes,
-                                            path
+                                            path,
                                         };
                                         Some(TypeParamBound::Trait(tb))
                                     }
-                                },
+                                }
                                 _ => {
                                     let tb = TraitBound {
                                         paren_token,
                                         modifier,
                                         lifetimes,
-                                        path
+                                        path,
                                     };
                                     Some(TypeParamBound::Trait(tb))
                                 }
                             }
-                        } else { Some(b) }
+                        } else {
+                            Some(b)
+                        }
                     };
                     match pair {
-                        Pair::<TypeParamBound, Add>::Punctuated(b, add) => {
-                            drop_bound_filter_map(b).map(|b| Pair::<TypeParamBound, Add>::Punctuated(b, add))
-                        },
-                        Pair::<TypeParamBound, Add>::End(b) => drop_bound_filter_map(b).map(Pair::<TypeParamBound, Add>::End),
+                        Pair::<TypeParamBound, Add>::Punctuated(b, add) => drop_bound_filter_map(b)
+                            .map(|b| Pair::<TypeParamBound, Add>::Punctuated(b, add)),
+                        Pair::<TypeParamBound, Add>::End(b) => {
+                            drop_bound_filter_map(b).map(Pair::<TypeParamBound, Add>::End)
+                        }
                     }
                 })
                 .map(|pair| match pair {
@@ -980,7 +845,12 @@ impl From<WherePredicate> for syn::WherePredicate {
 }
 
 impl From<WhereClause> for syn::WhereClause {
-    fn from(WhereClause { where_token, predicates }: WhereClause) -> Self {
+    fn from(
+        WhereClause {
+            where_token,
+            predicates,
+        }: WhereClause,
+    ) -> Self {
         Self {
             where_token,
             predicates: predicates
@@ -1112,7 +982,7 @@ impl From<ItemConstImpl> for TokenStream {
 // trait ToDbgString {
 //     fn to_dbg_string(&self) -> String;
 // }
-// 
+//
 // impl<T> ToDbgString for T
 // where
 //     T: ToTokens
@@ -1125,14 +995,14 @@ impl From<ItemConstImpl> for TokenStream {
 // }
 
 /// Unconditionally turns const trait implementation into non-const
-/// 
+///
 /// # Example
-/// 
+///
 /// ```rust, ignore
 /// #![cfg_attr(feature = "const_trait_impl", feature(const_trait_impl))]
 /// #![cfg_attr(feature = "const_default_impls", feature(const_default_impls))]
 /// #![cfg_attr(feature = "const_fn_trait_bound", feature(const_fn_trait_bound))]
-/// 
+///
 /// #[cfg(not(all(
 ///     feature = "const_trait_impl",
 ///     feature = "const_default_impls",
@@ -1146,14 +1016,14 @@ impl From<ItemConstImpl> for TokenStream {
 ///     feature = "const_fn_trait_bound"
 /// ))]
 /// use remove_macro_call::remove_macro_call;
-/// 
+///
 /// // Since ZST is both Eq and and PartialEq, it has structural match
 /// // https://github.com/rust-lang/rust/issues/63438
 /// #[derive(Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd, Copy)]
 /// pub struct ZST<T: ?Sized>(PhantomData<T>);
-/// 
+///
 /// pub trait TraitName {}
-/// 
+///
 /// #[cfg_attr(
 ///     all(
 ///         feature = "const_trait_impl",
@@ -1165,7 +1035,7 @@ impl From<ItemConstImpl> for TokenStream {
 /// unconst_trait_impl! {
 ///     impl<T: ?Sized> const TraitName for ZST<T> {}
 /// }
-/// 
+///
 /// // With `cargo build --features const_trait_impl, const_default_impls, const_fn_trait_bound`
 /// // or with `cargo build --all-features, the code below is expanded as is. Otherwise,
 /// // it gets "unconsted" to be supported by stable toolchain.
@@ -1185,9 +1055,9 @@ impl From<ItemConstImpl> for TokenStream {
 ///     }
 /// }
 /// ```
-/// 
+///
 /// **Note**: In the real code, the example above could be replaced with a simpler version relying on [`cfg_aliases`](https://crates.io/crates/cfg_aliases) crate.
-/// 
+///
 /// You can learn more about `remove_macro_call` here:
 /// * [GitHub](https://github.com/JohnScience/remove_macro_call)
 /// * [crates.io](https://crates.io/crates/remove_macro_call)
@@ -1196,7 +1066,7 @@ impl From<ItemConstImpl> for TokenStream {
 pub fn unconst_trait_impl(item: TokenStream) -> TokenStream {
     let item_const_impl = parse_macro_input!(item as ItemConstImpl);
     let item_impl: ItemImpl = item_const_impl.into();
-    
+
     item_impl.to_token_stream().into()
 
     // let ItemImpl {
