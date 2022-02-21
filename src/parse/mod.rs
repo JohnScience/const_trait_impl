@@ -2,12 +2,15 @@ mod item;
 mod local;
 
 use crate::{
-    GenericParam, Generics, ImplItem, ItemConstImpl, PredicateLifetime, PredicateType, TildeConst,
-    TraitBound, TraitBoundModifier, TypeParam, TypeParamBound, WhereClause, WherePredicate,
+    GenericParam, Generics, ImplItem, ImplItemMethod, ItemConstImpl, PredicateLifetime,
+    PredicateType, TildeConst, TraitBound, TraitBoundModifier, TypeParam, TypeParamBound,
+    WhereClause, WherePredicate,
 };
 use item::{parse_impl_item_type, peek_signature, verbatim};
 use local::{LocalIsInherited, LocalParse};
-use proc_macro2::{Span as Span2, TokenStream as TokenStream2};
+use proc_macro2::{
+    Punct, Spacing, Span as Span2, TokenStream as TokenStream2, TokenTree as TokenTree2,
+};
 use syn::{
     braced, bracketed,
     ext::IdentExt,
@@ -16,9 +19,9 @@ use syn::{
     punctuated::Punctuated,
     spanned::Spanned,
     token::{Bang, Brace, Default as DefaultKW, Impl, Paren, Pound},
-    AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, ImplItemConst, Lifetime,
-    LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, Result, Token, Type, TypePath,
-    Visibility,
+    AttrStyle, Attribute, Block, BoundLifetimes, ConstParam, Error, Ident, ImplItemConst, Item,
+    Lifetime, LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, Result, Signature,
+    Stmt, Token, Type, TypePath, Visibility,
 };
 
 impl Parse for TildeConst {
@@ -526,5 +529,47 @@ impl Parse for ImplItem {
             *item_attrs = attrs;
         }
         Ok(item)
+    }
+}
+
+impl Parse for ImplItemMethod {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let mut attrs = input.call(Attribute::parse_outer)?;
+        let vis: Visibility = input.parse()?;
+        let defaultness: Option<syn::token::Default> = input.parse()?;
+        let sig: Signature = input.parse()?;
+        let block = if let Some(semi) = input.parse::<Option<syn::token::Semi>>()? {
+            let mut punct = Punct::new(';', Spacing::Alone);
+            punct.set_span(semi.span);
+            let tokens =
+                TokenStream2::from_iter(<[_]>::into_vec(Box::new([TokenTree2::Punct(punct)])));
+            Block {
+                brace_token: Brace { span: semi.span },
+                stmts: <[_]>::into_vec(Box::new([Stmt::Item(Item::Verbatim(tokens))])),
+            }
+        } else {
+            let content;
+            let brace_token = match syn::group::parse_braces(&input) {
+                Result::Ok(braces) => {
+                    content = braces.content;
+                    braces.token
+                }
+                Result::Err(error) => {
+                    return Result::Err(error);
+                }
+            };
+            attrs.extend(content.call(Attribute::parse_inner)?);
+            Block {
+                brace_token,
+                stmts: content.call(Block::parse_within)?,
+            }
+        };
+        Ok(ImplItemMethod {
+            attrs,
+            vis,
+            defaultness,
+            sig,
+            block,
+        })
     }
 }
