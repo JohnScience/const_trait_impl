@@ -1,7 +1,7 @@
-use syn::{parse::ParseStream, Result};
 use crate::WhereClause;
+use syn::{parse::ParseStream, Result};
 
-pub(in super) trait LocalParse: Sized {
+pub(super) trait LocalParse: Sized {
     fn local_parse(input: ParseStream) -> Result<Self>;
 }
 

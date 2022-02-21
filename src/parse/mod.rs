@@ -1,24 +1,22 @@
 mod local;
 
-use proc_macro2::{TokenStream as TokenStream2, Span as Span2};
 use crate::{
-    GenericParam, Generics, TildeConst, TraitBound, TraitBoundModifier, TypeParam, TypeParamBound,
-    WhereClause, WherePredicate, PredicateType, PredicateLifetime, ItemConstImpl
-};
-use syn::{
-    AttrStyle,
-    braced,
-    bracketed,
-    ext::IdentExt,
-    parenthesized,
-    spanned::Spanned,
-    parse::{Parse, ParseStream},
-    punctuated::Punctuated,
-    token::{Paren, Default as DefaultKW, Impl, Pound, Bang, Brace},
-    Attribute, BoundLifetimes, ConstParam, Ident, Lifetime, LifetimeDef,
-    ParenthesizedGenericArguments, Path, PathArguments, Result, Token, Type, Error, TypePath, ImplItem
+    GenericParam, Generics, ItemConstImpl, PredicateLifetime, PredicateType, TildeConst,
+    TraitBound, TraitBoundModifier, TypeParam, TypeParamBound, WhereClause, WherePredicate,
 };
 use local::LocalParse;
+use proc_macro2::{Span as Span2, TokenStream as TokenStream2};
+use syn::{
+    braced, bracketed,
+    ext::IdentExt,
+    parenthesized,
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+    spanned::Spanned,
+    token::{Bang, Brace, Default as DefaultKW, Impl, Paren, Pound},
+    AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, ImplItem, Lifetime,
+    LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, Result, Token, Type, TypePath,
+};
 
 impl Parse for TildeConst {
     fn parse(input: ParseStream) -> Result<Self> {
@@ -103,6 +101,22 @@ impl Parse for TypeParamBound {
         input.parse::<TraitBound>().map(TypeParamBound::Trait)
     }
 }
+
+// // verbatim.rs (syn 1.0.86)
+// mod verbatim {
+//     use super::*;
+//     pub fn between<'a>(begin: ParseBuffer<'a>, end: ParseStream<'a>) -> TokenStream2 {
+//         let end = end.cursor();
+//         let mut cursor = begin.cursor();
+//         let mut tokens = TokenStream2::new();
+//         while cursor != end {
+//             let (tt, next) = cursor.token_tree().unwrap();
+//             tokens.extend(core::iter::once(tt));
+//             cursor = next;
+//         }
+//         tokens
+//     }
+// }
 
 // generics.rs (syn 1.0.86)
 impl Parse for TypeParam {
