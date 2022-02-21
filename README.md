@@ -78,7 +78,12 @@ You can learn more about `remove_macro_call` here:
 
 ## Known limitations
 
-Currently, type parameters (like `T` in `T: ~const TraitName + ?Sized`) get "unconsted" only when they belong to the trait implementation, i.e. when they are in `<..>` or in the `where` clause of the trait implementation. [Items](https://docs.rs/syn/latest/syn/enum.ImplItem.html) in the trait implementation currently don't get "unconsted".
+Currently, type parameters (like `T` in `T: ~const TraitName + ?Sized`) get "unconsted" only when
+
+1. they belong to the trait implementation, i.e. when they are in `<..>` or in the `where` clause of the trait implementation;
+2. they belong to the signatures of methods and associated functions;
+
+Other [Items](https://docs.rs/syn/latest/syn/enum.ImplItem.html) in the trait implementation currently don't get "unconsted".
 
 # License
 
