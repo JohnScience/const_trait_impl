@@ -6,9 +6,9 @@ use syn::{
     parse_macro_input,
     punctuated::{Pair, Punctuated},
     token::{Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Paren, Unsafe},
-    Attribute, Block, BoundLifetimes, ConstParam, Ident, ImplItemConst, ImplItemMacro, ItemImpl,
-    Lifetime, LifetimeDef, Path, PredicateEq, PredicateLifetime, Signature, Token, Type,
-    Visibility,
+    Abi, Attribute, Block, BoundLifetimes, ConstParam, FnArg, Ident, ImplItemConst, ImplItemMacro,
+    ItemImpl, Lifetime, LifetimeDef, Path, PredicateEq, PredicateLifetime, ReturnType, Token, Type,
+    Variadic, Visibility,
 };
 // syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
 // due to the two transitive chains:
@@ -28,6 +28,7 @@ use syn::{
 //
 // use syn::ImplItem;
 // use syn::ImplItemMethod;
+// use syn::Signature;
 use syn::ImplItemType;
 //
 // TODO: track issue: <https://github.com/dtolnay/syn/issues/1130>
@@ -48,6 +49,20 @@ pub(crate) struct ItemConstImpl {
     self_ty: Box<Type>,
     brace_token: Brace,
     items: Vec<ImplItem>,
+}
+
+pub(crate) struct Signature {
+    pub constness: Option<Token![const]>,
+    pub asyncness: Option<Token![async]>,
+    pub unsafety: Option<Token![unsafe]>,
+    pub abi: Option<Abi>,
+    pub fn_token: Token![fn],
+    pub ident: Ident,
+    pub generics: Generics,
+    pub paren_token: syn::token::Paren,
+    pub inputs: Punctuated<FnArg, Token![,]>,
+    pub variadic: Option<Variadic>,
+    pub output: ReturnType,
 }
 
 pub(crate) struct ImplItemMethod {

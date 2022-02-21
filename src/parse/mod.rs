@@ -3,8 +3,8 @@ mod local;
 
 use crate::{
     GenericParam, Generics, ImplItem, ImplItemMethod, ItemConstImpl, PredicateLifetime,
-    PredicateType, TildeConst, TraitBound, TraitBoundModifier, TypeParam, TypeParamBound,
-    WhereClause, WherePredicate,
+    PredicateType, Signature, TildeConst, TraitBound, TraitBoundModifier, TypeParam,
+    TypeParamBound, WhereClause, WherePredicate,
 };
 use item::{parse_impl_item_type, peek_signature, verbatim};
 use local::{LocalIsInherited, LocalParse};
@@ -16,12 +16,13 @@ use syn::{
     ext::IdentExt,
     parenthesized,
     parse::{discouraged::Speculative, Parse, ParseStream},
+    parse2,
     punctuated::Punctuated,
     spanned::Spanned,
     token::{Bang, Brace, Default as DefaultKW, Impl, Paren, Pound},
-    AttrStyle, Attribute, Block, BoundLifetimes, ConstParam, Error, Ident, ImplItemConst, Item,
-    Lifetime, LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, Result, Signature,
-    Stmt, Token, Type, TypePath, Visibility,
+    Abi, AttrStyle, Attribute, Block, BoundLifetimes, ConstParam, Error, FnArg, Ident,
+    ImplItemConst, Item, Lifetime, LifetimeDef, ParenthesizedGenericArguments, Pat, PatType, Path,
+    PathArguments, Result, ReturnType, Stmt, Token, Type, TypePath, Variadic, Visibility,
 };
 
 impl Parse for TildeConst {
@@ -529,6 +530,133 @@ impl Parse for ImplItem {
             *item_attrs = attrs;
         }
         Ok(item)
+    }
+}
+
+fn variadic_to_tokens(dots: &syn::token::Dot3) -> TokenStream2 {
+    TokenStream2::from_iter(<[_]>::into_vec(Box::new([
+        TokenTree2::Punct({
+            let mut dot = Punct::new('.', Spacing::Joint);
+            dot.set_span(dots.spans[0]);
+            dot
+        }),
+        TokenTree2::Punct({
+            let mut dot = Punct::new('.', Spacing::Joint);
+            dot.set_span(dots.spans[1]);
+            dot
+        }),
+        TokenTree2::Punct({
+            let mut dot = Punct::new('.', Spacing::Alone);
+            dot.set_span(dots.spans[2]);
+            dot
+        }),
+    ])))
+}
+
+fn parse_fn_args(input: ParseStream) -> Result<Punctuated<FnArg, syn::token::Comma>> {
+    let mut args = Punctuated::new();
+    let mut has_receiver = false;
+    while !input.is_empty() {
+        let attrs = input.call(Attribute::parse_outer)?;
+        let arg = if let Some(dots) = input.parse::<Option<syn::token::Dot3>>()? {
+            FnArg::Typed(PatType {
+                attrs,
+                pat: Box::new(Pat::Verbatim(variadic_to_tokens(&dots))),
+                colon_token: syn::token::Colon(dots.spans[0]),
+                ty: Box::new(Type::Verbatim(variadic_to_tokens(&dots))),
+            })
+        } else {
+            let mut arg: FnArg = input.parse()?;
+            match &mut arg {
+                FnArg::Receiver(receiver) if has_receiver => {
+                    return Err(Error::new(
+                        receiver.self_token.span,
+                        "unexpected second method receiver",
+                    ));
+                }
+                FnArg::Receiver(receiver) if !args.is_empty() => {
+                    return Err(Error::new(
+                        receiver.self_token.span,
+                        "unexpected method receiver",
+                    ));
+                }
+                FnArg::Receiver(receiver) => {
+                    has_receiver = true;
+                    receiver.attrs = attrs;
+                }
+                FnArg::Typed(arg) => arg.attrs = attrs,
+            }
+            arg
+        };
+        args.push_value(arg);
+        if input.is_empty() {
+            break;
+        }
+        let comma: syn::token::Comma = input.parse()?;
+        args.push_punct(comma);
+    }
+    Ok(args)
+}
+
+fn pop_variadic(args: &mut Punctuated<FnArg, syn::token::Comma>) -> Option<Variadic> {
+    let trailing_punct = args.trailing_punct();
+    let last = match args.last_mut()? {
+        FnArg::Typed(last) => last,
+        _ => return None,
+    };
+    let ty = match last.ty.as_ref() {
+        Type::Verbatim(ty) => ty,
+        _ => return None,
+    };
+    let mut variadic = Variadic {
+        attrs: Vec::new(),
+        dots: parse2(ty.clone()).ok()?,
+    };
+    if let Pat::Verbatim(pat) = last.pat.as_ref() {
+        if pat.to_string() == "..." && !trailing_punct {
+            variadic.attrs = core::mem::replace(&mut last.attrs, Vec::new());
+            args.pop();
+        }
+    }
+    Some(variadic)
+}
+
+impl Parse for Signature {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let constness: Option<syn::token::Const> = input.parse()?;
+        let asyncness: Option<syn::token::Async> = input.parse()?;
+        let unsafety: Option<syn::token::Unsafe> = input.parse()?;
+        let abi: Option<Abi> = input.parse()?;
+        let fn_token: syn::token::Fn = input.parse()?;
+        let ident: Ident = input.parse()?;
+        let mut generics: Generics = input.parse()?;
+        let content;
+        let paren_token = match syn::group::parse_parens(&input) {
+            Result::Ok(parens) => {
+                content = parens.content;
+                parens.token
+            }
+            Result::Err(error) => {
+                return Result::Err(error);
+            }
+        };
+        let mut inputs = parse_fn_args(&content)?;
+        let variadic = pop_variadic(&mut inputs);
+        let output: ReturnType = input.parse()?;
+        generics.where_clause = Option::<WhereClause>::local_parse(input)?;
+        Ok(Signature {
+            constness,
+            asyncness,
+            unsafety,
+            abi,
+            fn_token,
+            ident,
+            generics,
+            paren_token,
+            inputs,
+            variadic,
+            output,
+        })
     }
 }
 

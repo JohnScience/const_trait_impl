@@ -1,6 +1,7 @@
 use crate::{
     GenericParam, Generics, ImplItem, ImplItemMethod, ItemConstImpl, ItemImpl, PredicateType,
-    TraitBound, TraitBoundModifier, TypeParam, TypeParamBound, WhereClause, WherePredicate,
+    Signature, TraitBound, TraitBoundModifier, TypeParam, TypeParamBound, WhereClause,
+    WherePredicate,
 };
 use syn::{
     punctuated::{Pair, Punctuated},
@@ -267,6 +268,38 @@ impl From<Generics> for syn::Generics {
     }
 }
 
+impl From<Signature> for syn::Signature {
+    fn from(
+        Signature {
+            constness,
+            asyncness,
+            unsafety,
+            abi,
+            fn_token,
+            ident,
+            generics,
+            paren_token,
+            inputs,
+            variadic,
+            output,
+        }: Signature,
+    ) -> Self {
+        Self {
+            constness,
+            asyncness,
+            unsafety,
+            abi,
+            fn_token,
+            ident,
+            generics: generics.into(),
+            paren_token,
+            inputs,
+            variadic,
+            output,
+        }
+    }
+}
+
 impl From<ImplItemMethod> for syn::ImplItemMethod {
     fn from(
         ImplItemMethod {
@@ -281,7 +314,7 @@ impl From<ImplItemMethod> for syn::ImplItemMethod {
             attrs,
             vis,
             defaultness,
-            sig,
+            sig: sig.into(),
             block,
         }
     }
