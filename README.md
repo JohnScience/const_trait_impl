@@ -76,6 +76,10 @@ You can learn more about `remove_macro_call` here:
 * [GitHub](https://github.com/JohnScience/remove_macro_call)
 * [crates.io](https://crates.io/crates/remove_macro_call)
 
+## Known limitations
+
+Currently, type parameters (like `T` in `T: ~const TraitName + ?Sized`) get "unconsted" only when they belong to the trait implementation, i.e. when they are in `<..>` or in the `where` clause of the trait implementation. [Items](https://docs.rs/syn/latest/syn/enum.ImplItem.html) in the trait implementation currently don't get "unconsted".
+
 # License
 
 <sup>

@@ -1109,6 +1109,21 @@ impl From<ItemConstImpl> for TokenStream {
     }
 }
 
+// trait ToDbgString {
+//     fn to_dbg_string(&self) -> String;
+// }
+// 
+// impl<T> ToDbgString for T
+// where
+//     T: ToTokens
+// {
+//     fn to_dbg_string(&self) -> String {
+//         let ts = self.to_token_stream();
+//         let t_name = core::any::type_name::<T>();
+//         format!("{t_name}{{{ts}}}")
+//     }
+// }
+
 /// Unconditionally turns const trait implementation into non-const
 /// 
 /// # Example
@@ -1184,7 +1199,18 @@ pub fn unconst_trait_impl(item: TokenStream) -> TokenStream {
     
     item_impl.to_token_stream().into()
 
-    //let comment = format!("const S: &str = \"{}\";", item_impl.to_token_stream());
-    //let ts = <TokenStream as std::str::FromStr>::from_str(&comment).unwrap();
-    //ts
+    // let ItemImpl {
+    //     attrs,
+    //     defaultness,
+    //     unsafety,
+    //     impl_token,
+    //     generics,
+    //     trait_,
+    //     self_ty,
+    //     brace_token,
+    //     items
+    // } = item_impl;
+    // let comment = format!("const S: &str = \"{}\";", generics.to_dbg_string());
+    // let ts = <TokenStream as std::str::FromStr>::from_str(&comment).unwrap();
+    // ts
 }
