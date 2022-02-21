@@ -1,6 +1,6 @@
 use crate::{
     GenericParam, PredicateType, TraitBound, TraitBoundModifier, TypeParam, TypeParamBound,
-    WherePredicate, WhereClause, Generics, ItemImpl, ItemConstImpl
+    WherePredicate, WhereClause, Generics, ItemImpl, ItemConstImpl, ImplItem
 };
 use syn::{
     punctuated::{Pair, Punctuated},
@@ -267,6 +267,18 @@ impl From<Generics> for syn::Generics {
     }
 }
 
+impl From<ImplItem> for syn::ImplItem {
+    fn from(impl_item: ImplItem) -> Self {
+        match impl_item {
+            ImplItem::Const(c) => Self::Const(c),
+            ImplItem::Macro(m) => Self::Macro(m),
+            ImplItem::Method(m) => Self::Method(m),
+            ImplItem::Type(t) => Self::Type(t),
+            ImplItem::Verbatim(v) => Self::Verbatim(v),
+        }
+    }
+}
+
 impl From<ItemConstImpl> for ItemImpl {
     fn from(item_const_impl: ItemConstImpl) -> Self {
         let ItemConstImpl {
@@ -290,7 +302,7 @@ impl From<ItemConstImpl> for ItemImpl {
             trait_,
             self_ty,
             brace_token,
-            items,
+            items: items.into_iter().map(<ImplItem as Into::<syn::ImplItem>>::into).collect(),
         }
     }
 }

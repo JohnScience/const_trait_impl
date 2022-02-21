@@ -1,21 +1,24 @@
 mod local;
+mod item;
 
 use crate::{
     GenericParam, Generics, ItemConstImpl, PredicateLifetime, PredicateType, TildeConst,
     TraitBound, TraitBoundModifier, TypeParam, TypeParamBound, WhereClause, WherePredicate,
+    ImplItem
 };
-use local::LocalParse;
+use local::{LocalParse, LocalIsInherited};
+use item::{peek_signature, parse_impl_item_type, verbatim};
 use proc_macro2::{Span as Span2, TokenStream as TokenStream2};
 use syn::{
     braced, bracketed,
     ext::IdentExt,
     parenthesized,
-    parse::{Parse, ParseStream},
+    parse::{Parse, ParseStream, discouraged::Speculative},
     punctuated::Punctuated,
     spanned::Spanned,
     token::{Bang, Brace, Default as DefaultKW, Impl, Paren, Pound},
-    AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, ImplItem, Lifetime,
-    LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, Result, Token, Type, TypePath,
+    AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, Lifetime,
+    LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, Result, Token, Type, TypePath, Visibility, ImplItemConst,
 };
 
 impl Parse for TildeConst {
@@ -429,7 +432,7 @@ impl Parse for ItemConstImpl {
 
         let mut items = Vec::new();
         while !content.is_empty() {
-            items.push(content.parse::<ImplItem>()?);
+            items.push(ImplItem::local_parse(&content)?);
         }
         if is_impl_for && trait_.is_none() {
             Err(Error::new(is_impl_for.span(), "expected trait name"))
@@ -447,5 +450,82 @@ impl Parse for ItemConstImpl {
                 items,
             })
         }
+    }
+}
+
+// item.rs (syn 1.0.86)
+// Originally, the code was generated with a macro
+impl LocalParse for ImplItem {
+    fn local_parse(input: ParseStream) -> Result<Self> {
+        let begin = input.fork();
+        let mut attrs = input.call(Attribute::parse_outer)?;
+        let ahead = input.fork();
+        let vis: Visibility = ahead.parse()?;
+        let mut lookahead = ahead.lookahead1();
+        let defaultness =
+            if lookahead.peek(syn::token::Default) && !ahead.peek2(syn::token::Bang) {
+                let defaultness: syn::token::Default = ahead.parse()?;
+                lookahead = ahead.lookahead1();
+                Some(defaultness)
+            } else {
+                None
+            };
+        let mut item = if lookahead.peek(syn::token::Fn) || peek_signature(&ahead) {
+            input.parse().map(ImplItem::Method)
+        } else if lookahead.peek(syn::token::Const) {
+            let const_token: syn::token::Const = ahead.parse()?;
+            let lookahead = ahead.lookahead1();
+            if lookahead.peek(Ident) || lookahead.peek(syn::token::Underscore) {
+                input.advance_to(&ahead);
+                let ident: Ident = input.call(Ident::parse_any)?;
+                let colon_token: syn::token::Colon = input.parse()?;
+                let ty: Type = input.parse()?;
+                if let Some(eq_token) = input.parse()? {
+                    return Ok(ImplItem::Const(ImplItemConst {
+                        attrs,
+                        vis,
+                        defaultness,
+                        const_token,
+                        ident,
+                        colon_token,
+                        ty,
+                        eq_token,
+                        expr: input.parse()?,
+                        semi_token: input.parse()?,
+                    }));
+                } else {
+                    input.parse::<syn::token::Semi>()?;
+                    return Ok(ImplItem::Verbatim(verbatim::between(begin, input)));
+                }
+            } else {
+                Err(lookahead.error())
+            }
+        } else if lookahead.peek(syn::token::Type) {
+            parse_impl_item_type(begin, input)
+        } else if vis.local_is_inherited()
+            && defaultness.is_none()
+            && (lookahead.peek(Ident)
+                || lookahead.peek(syn::token::SelfValue)
+                || lookahead.peek(syn::token::Super)
+                || lookahead.peek(syn::token::Crate)
+                || lookahead.peek(syn::token::Colon2))
+        {
+            input.parse().map(ImplItem::Macro)
+        } else {
+            Err(lookahead.error())
+        }?;
+        {
+            let item_attrs = match &mut item {
+                ImplItem::Const(item) => &mut item.attrs,
+                ImplItem::Method(item) => &mut item.attrs,
+                ImplItem::Type(item) => &mut item.attrs,
+                ImplItem::Macro(item) => &mut item.attrs,
+                ImplItem::Verbatim(_) => return Ok(item),
+                _ => panic!("internal error: entered unreachable code"),
+            };
+            attrs.append(item_attrs);
+            *item_attrs = attrs;
+        }
+        Ok(item)
     }
 }

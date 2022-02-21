@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::ToTokens;
 use syn::{
     parse_macro_input,
@@ -8,7 +9,7 @@ use syn::{
         Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Paren, Unsafe,
     },
     Attribute, BoundLifetimes, ConstParam, Ident, ItemImpl, Lifetime, LifetimeDef, Path,
-    PredicateEq, PredicateLifetime, Token, Type,
+    PredicateEq, PredicateLifetime, Token, Type, ImplItemConst, ImplItemMacro
 };
 // syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
 // due to the two transitive chains:
@@ -26,7 +27,9 @@ use syn::{
 // use syn::PredicateType;
 // use syn::TypeParamBound;
 //
-use syn::ImplItem;
+// use syn::ImplItem;
+use syn::ImplItemMethod;
+use syn::ImplItemType;
 //
 // TODO: track issue: <https://github.com/dtolnay/syn/issues/1130>
 
@@ -48,48 +51,48 @@ pub(crate) struct ItemConstImpl {
     items: Vec<ImplItem>,
 }
 
-// enum ImplItem {
-//     /// An associated constant within an impl block.
-//     Const(ImplItemConst),
-//
-//     /// A method within an impl block.
-//     Method(ImplItemMethod),
-//
-//     /// An associated type within an impl block.
-//     Type(ImplItemType),
-//
-//     /// A macro invocation within an impl block.
-//     Macro(ImplItemMacro),
-//
-//     /// Tokens within an impl block not interpreted by Syn.
-//     Verbatim(TokenStream),
-//
-//     // // The following is the only supported idiom for exhaustive matching of
-//     // // this enum.
-//     // //
-//     // //     match expr {
-//     // //         ImplItem::Const(e) => {...}
-//     // //         ImplItem::Method(e) => {...}
-//     // //         ...
-//     // //         ImplItem::Verbatim(e) => {...}
-//     // //
-//     // //         #[cfg(test)]
-//     // //         ImplItem::__TestExhaustive(_) => unimplemented!(),
-//     // //         #[cfg(not(test))]
-//     // //         _ => { /* some sane fallback */ }
-//     // //     }
-//     // //
-//     // // This way we fail your tests but don't break your library when adding
-//     // // a variant. You will be notified by a test failure when a variant is
-//     // // added, so that you can add code to handle it, but your library will
-//     // // continue to compile and work for downstream users in the interim.
-//     // //
-//     // // Once `deny(reachable)` is available in rustc, ImplItem will be
-//     // // reimplemented as a non_exhaustive enum.
-//     // // https://github.com/rust-lang/rust/issues/44109#issuecomment-521781237
-//     // #[doc(hidden)]
-//     // __TestExhaustive(crate::private),
-// }
+enum ImplItem {
+    /// An associated constant within an impl block.
+    Const(ImplItemConst),
+
+    /// A method within an impl block.
+    Method(ImplItemMethod),
+
+    /// An associated type within an impl block.
+    Type(ImplItemType),
+
+    /// A macro invocation within an impl block.
+    Macro(ImplItemMacro),
+
+    /// Tokens within an impl block not interpreted by Syn.
+    Verbatim(TokenStream2),
+
+    // // The following is the only supported idiom for exhaustive matching of
+    // // this enum.
+    // //
+    // //     match expr {
+    // //         ImplItem::Const(e) => {...}
+    // //         ImplItem::Method(e) => {...}
+    // //         ...
+    // //         ImplItem::Verbatim(e) => {...}
+    // //
+    // //         #[cfg(test)]
+    // //         ImplItem::__TestExhaustive(_) => unimplemented!(),
+    // //         #[cfg(not(test))]
+    // //         _ => { /* some sane fallback */ }
+    // //     }
+    // //
+    // // This way we fail your tests but don't break your library when adding
+    // // a variant. You will be notified by a test failure when a variant is
+    // // added, so that you can add code to handle it, but your library will
+    // // continue to compile and work for downstream users in the interim.
+    // //
+    // // Once `deny(reachable)` is available in rustc, ImplItem will be
+    // // reimplemented as a non_exhaustive enum.
+    // // https://github.com/rust-lang/rust/issues/44109#issuecomment-521781237
+    // #[doc(hidden)]
+    // __TestExhaustive(crate::private),
+}
 
 // generics.rs (syn 1.0.86)
 #[derive(Default)]
