@@ -1,24 +1,24 @@
-mod local;
 mod item;
+mod local;
 
 use crate::{
-    GenericParam, Generics, ItemConstImpl, PredicateLifetime, PredicateType, TildeConst,
+    GenericParam, Generics, ImplItem, ItemConstImpl, PredicateLifetime, PredicateType, TildeConst,
     TraitBound, TraitBoundModifier, TypeParam, TypeParamBound, WhereClause, WherePredicate,
-    ImplItem
 };
-use local::{LocalParse, LocalIsInherited};
-use item::{peek_signature, parse_impl_item_type, verbatim};
+use item::{parse_impl_item_type, peek_signature, verbatim};
+use local::{LocalIsInherited, LocalParse};
 use proc_macro2::{Span as Span2, TokenStream as TokenStream2};
 use syn::{
     braced, bracketed,
     ext::IdentExt,
     parenthesized,
-    parse::{Parse, ParseStream, discouraged::Speculative},
+    parse::{discouraged::Speculative, Parse, ParseStream},
     punctuated::Punctuated,
     spanned::Spanned,
     token::{Bang, Brace, Default as DefaultKW, Impl, Paren, Pound},
-    AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, Lifetime,
-    LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, Result, Token, Type, TypePath, Visibility, ImplItemConst,
+    AttrStyle, Attribute, BoundLifetimes, ConstParam, Error, Ident, ImplItemConst, Lifetime,
+    LifetimeDef, ParenthesizedGenericArguments, Path, PathArguments, Result, Token, Type, TypePath,
+    Visibility,
 };
 
 impl Parse for TildeConst {
@@ -462,14 +462,13 @@ impl LocalParse for ImplItem {
         let ahead = input.fork();
         let vis: Visibility = ahead.parse()?;
         let mut lookahead = ahead.lookahead1();
-        let defaultness =
-            if lookahead.peek(syn::token::Default) && !ahead.peek2(syn::token::Bang) {
-                let defaultness: syn::token::Default = ahead.parse()?;
-                lookahead = ahead.lookahead1();
-                Some(defaultness)
-            } else {
-                None
-            };
+        let defaultness = if lookahead.peek(syn::token::Default) && !ahead.peek2(syn::token::Bang) {
+            let defaultness: syn::token::Default = ahead.parse()?;
+            lookahead = ahead.lookahead1();
+            Some(defaultness)
+        } else {
+            None
+        };
         let mut item = if lookahead.peek(syn::token::Fn) || peek_signature(&ahead) {
             input.parse().map(ImplItem::Method)
         } else if lookahead.peek(syn::token::Const) {
@@ -521,7 +520,7 @@ impl LocalParse for ImplItem {
                 ImplItem::Type(item) => &mut item.attrs,
                 ImplItem::Macro(item) => &mut item.attrs,
                 ImplItem::Verbatim(_) => return Ok(item),
-                _ => panic!("internal error: entered unreachable code"),
+                // _ => panic!("internal error: entered unreachable code"),
             };
             attrs.append(item_attrs);
             *item_attrs = attrs;

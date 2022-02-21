@@ -5,11 +5,9 @@ use quote::ToTokens;
 use syn::{
     parse_macro_input,
     punctuated::{Pair, Punctuated},
-    token::{
-        Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Paren, Unsafe,
-    },
-    Attribute, BoundLifetimes, ConstParam, Ident, ItemImpl, Lifetime, LifetimeDef, Path,
-    PredicateEq, PredicateLifetime, Token, Type, ImplItemConst, ImplItemMacro
+    token::{Bang, Brace, Comma, Const, Default as DefaultKW, For, Gt, Impl, Lt, Paren, Unsafe},
+    Attribute, BoundLifetimes, ConstParam, Ident, ImplItemConst, ImplItemMacro, ItemImpl, Lifetime,
+    LifetimeDef, Path, PredicateEq, PredicateLifetime, Token, Type,
 };
 // syn::Generics is not suitable for support of const_trait_impl and const_fn_trait_bound
 // due to the two transitive chains:
@@ -66,7 +64,6 @@ enum ImplItem {
 
     /// Tokens within an impl block not interpreted by Syn.
     Verbatim(TokenStream2),
-
     // // The following is the only supported idiom for exhaustive matching of
     // // this enum.
     // //

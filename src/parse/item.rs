@@ -1,6 +1,11 @@
-use syn::{parse::{Parse, ParseBuffer, ParseStream, Result}, Visibility, Ident, Generics, punctuated::Punctuated, Type, ImplItemType};
 use crate::{ImplItem, TypeParamBound};
+use syn::{
+    parse::{Parse, ParseBuffer, ParseStream, Result},
+    punctuated::Punctuated,
+    Generics, Ident, ImplItemType, Type, Visibility,
+};
 
+#[allow(dead_code)]
 struct FlexibleItemType {
     vis: Visibility,
     defaultness: Option<syn::token::Default>,
@@ -61,10 +66,10 @@ impl Parse for FlexibleItemType {
     }
 }
 
-pub(in super) mod verbatim {
-    use syn::parse::{ParseBuffer, ParseStream};
+pub(super) mod verbatim {
     use proc_macro2::TokenStream as TokenStream2;
     use std::iter;
+    use syn::parse::{ParseBuffer, ParseStream};
     pub fn between<'a>(begin: ParseBuffer<'a>, end: ParseStream<'a>) -> TokenStream2 {
         let end = end.cursor();
         let mut cursor = begin.cursor();
@@ -78,7 +83,7 @@ pub(in super) mod verbatim {
     }
 }
 
-pub(in super) fn parse_impl_item_type(begin: ParseBuffer, input: ParseStream) -> Result<ImplItem> {
+pub(super) fn parse_impl_item_type(begin: ParseBuffer, input: ParseStream) -> Result<ImplItem> {
     let FlexibleItemType {
         vis,
         defaultness,
@@ -108,7 +113,7 @@ pub(in super) fn parse_impl_item_type(begin: ParseBuffer, input: ParseStream) ->
     }
 }
 
-pub(in super) fn peek_signature(input: ParseStream) -> bool {
+pub(super) fn peek_signature(input: ParseStream) -> bool {
     let fork = input.fork();
     fork.parse::<Option<syn::token::Const>>().is_ok()
         && fork.parse::<Option<syn::token::Async>>().is_ok()
