@@ -432,7 +432,7 @@ impl Parse for ItemConstImpl {
 
         let mut items = Vec::new();
         while !content.is_empty() {
-            items.push(ImplItem::local_parse(&content)?);
+            items.push(ImplItem::parse(&content)?);
         }
         if is_impl_for && trait_.is_none() {
             Err(Error::new(is_impl_for.span(), "expected trait name"))
@@ -455,8 +455,8 @@ impl Parse for ItemConstImpl {
 
 // item.rs (syn 1.0.86)
 // Originally, the code was generated with a macro
-impl LocalParse for ImplItem {
-    fn local_parse(input: ParseStream) -> Result<Self> {
+impl Parse for ImplItem {
+    fn parse(input: ParseStream) -> Result<Self> {
         let begin = input.fork();
         let mut attrs = input.call(Attribute::parse_outer)?;
         let ahead = input.fork();
