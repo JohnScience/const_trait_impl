@@ -631,15 +631,7 @@ impl Parse for Signature {
         let ident: Ident = input.parse()?;
         let mut generics: Generics = input.parse()?;
         let content;
-        let paren_token = match syn::group::parse_parens(&input) {
-            Result::Ok(parens) => {
-                content = parens.content;
-                parens.token
-            }
-            Result::Err(error) => {
-                return Result::Err(error);
-            }
-        };
+        let paren_token = parenthesized!(content in input);
         let mut inputs = parse_fn_args(&content)?;
         let variadic = pop_variadic(&mut inputs);
         let output: ReturnType = input.parse()?;
@@ -662,7 +654,7 @@ impl Parse for Signature {
 
 impl Parse for ImplItemMethod {
     fn parse(input: ParseStream) -> Result<Self> {
-        let mut attrs = input.call(Attribute::parse_outer)?;
+        let attrs = input.call(Attribute::parse_outer)?;
         let vis: Visibility = input.parse()?;
         let defaultness: Option<syn::token::Default> = input.parse()?;
         let sig: Signature = input.parse()?;
@@ -677,16 +669,7 @@ impl Parse for ImplItemMethod {
             }
         } else {
             let content;
-            let brace_token = match syn::group::parse_braces(&input) {
-                Result::Ok(braces) => {
-                    content = braces.content;
-                    braces.token
-                }
-                Result::Err(error) => {
-                    return Result::Err(error);
-                }
-            };
-            attrs.extend(content.call(Attribute::parse_inner)?);
+            let brace_token = braced!(content in input);
             Block {
                 brace_token,
                 stmts: content.call(Block::parse_within)?,
