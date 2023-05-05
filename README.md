@@ -91,7 +91,7 @@ From the standpoint of stable Rust, nightly Rust syntax is **not** Rust. Therefo
 * Expressions accept outer attributes in limited situations, see Expression Attributes for details.
 * Function, closure and function pointer parameters accept outer attributes. This includes attributes on variadic parameters denoted with ... in function pointers and external blocks.
 
-Notice that "arbitrary Rust-like syntax" is not one of them. So the nightly syntax *has* to be wrapped in a function-like macro. It is also necessary to evaluate the [configuration predicates](https://doc.rust-lang.org/reference/conditional-compilation.html#:~:text=compilation%20takes%20a-,configuration%20predicate,-that%20evaluates%20to) before expansion of the function-like macro, which is problematic if at all possible in the context of a function-like macro.
+Notice that "arbitrary Rust-like syntax" is not one of them. So the nightly syntax *has* to be wrapped in a function-like macro, which does permit arbitrary Rust-like syntax. It is also necessary to evaluate the [configuration predicates](https://doc.rust-lang.org/reference/conditional-compilation.html#:~:text=compilation%20takes%20a-,configuration%20predicate,-that%20evaluates%20to) before expansion of the function-like macro, which is problematic if at all possible in the context of a function-like macro.
 
 ## Known limitations
 
