@@ -76,6 +76,23 @@ You can learn more about `remove_macro_call` here:
 * [GitHub](https://github.com/JohnScience/remove_macro_call)
 * [crates.io](https://crates.io/crates/remove_macro_call)
 
+## Why is it so ugly?
+
+From the standpoint of stable Rust, nightly Rust syntax is **not** Rust. Therefore, using an attribute would not suffice. 
+
+[According to the reference](https://doc.rust-lang.org/reference/attributes.html), attributes may be applied to many things in the language:
+
+* All item declarations accept outer attributes while external blocks, functions, implementations, and modules accept inner attributes.
+* Most statements accept outer attributes (see Expression Attributes for limitations on expression statements).
+* Block expressions accept outer and inner attributes, but only when they are the outer expression of an expression statement or the final expression of another block expression.
+* Enum variants and struct and union fields accept outer attributes.
+* Match expression arms accept outer attributes.
+* Generic lifetime or type parameter accept outer attributes.
+* Expressions accept outer attributes in limited situations, see Expression Attributes for details.
+* Function, closure and function pointer parameters accept outer attributes. This includes attributes on variadic parameters denoted with ... in function pointers and external blocks.
+
+Notice that "arbitrary Rust-like syntax" is not one of them. So the nightly syntax *has* to be wrapped in a function-like macro. It is also necessary to evaluate the [configuration predicates](https://doc.rust-lang.org/reference/conditional-compilation.html#:~:text=compilation%20takes%20a-,configuration%20predicate,-that%20evaluates%20to) before expansion of the function-like macro, which is problematic if at all possible in the context of a function-like macro.
+
 ## Known limitations
 
 Currently, type parameters (like `T` in `T: ~const TraitName + ?Sized`) get "unconsted" only when
